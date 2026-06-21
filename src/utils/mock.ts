@@ -1,0 +1,323 @@
+import {
+  Pet,
+  Room,
+  Appointment,
+  TreatmentItem,
+  Bill,
+  MedicalRecord,
+  BillingConfig,
+} from '../types';
+
+export const mockPets: Pet[] = [
+  {
+    id: 'pet-1',
+    name: '豆豆',
+    species: 'dog',
+    breed: '金毛寻回犬',
+    age: 3,
+    ownerName: '张先生',
+    ownerPhone: '138****1234',
+    createdAt: '2024-01-15T10:00:00Z',
+  },
+  {
+    id: 'pet-2',
+    name: '咪咪',
+    species: 'cat',
+    breed: '英国短毛猫',
+    age: 2,
+    ownerName: '李女士',
+    ownerPhone: '139****5678',
+    createdAt: '2024-02-20T14:30:00Z',
+  },
+  {
+    id: 'pet-3',
+    name: '旺财',
+    species: 'dog',
+    breed: '柴犬',
+    age: 4,
+    ownerName: '王先生',
+    ownerPhone: '137****9012',
+    createdAt: '2024-03-10T09:15:00Z',
+  },
+  {
+    id: 'pet-4',
+    name: '雪球',
+    species: 'cat',
+    breed: '布偶猫',
+    age: 1,
+    ownerName: '赵女士',
+    ownerPhone: '136****3456',
+    createdAt: '2024-04-05T16:45:00Z',
+  },
+  {
+    id: 'pet-5',
+    name: '大黄',
+    species: 'dog',
+    breed: '拉布拉多',
+    age: 5,
+    ownerName: '陈先生',
+    ownerPhone: '135****7890',
+    createdAt: '2024-05-12T11:20:00Z',
+  },
+];
+
+export const mockRooms: Room[] = [
+  {
+    id: 'room-1',
+    name: '1号诊室',
+    number: 1,
+    status: 'busy',
+    vetName: '李医生',
+    currentAppointmentId: 'appt-1',
+  },
+  {
+    id: 'room-2',
+    name: '2号诊室',
+    number: 2,
+    status: 'busy',
+    vetName: '王医生',
+    currentAppointmentId: 'appt-2',
+  },
+  {
+    id: 'room-3',
+    name: '3号诊室',
+    number: 3,
+    status: 'idle',
+    vetName: '张医生',
+  },
+  {
+    id: 'room-4',
+    name: '4号诊室',
+    number: 4,
+    status: 'idle',
+    vetName: '刘医生',
+  },
+];
+
+export const mockAppointments: Appointment[] = [
+  {
+    id: 'appt-1',
+    queueNumber: 'A001',
+    petId: 'pet-1',
+    roomId: 'room-1',
+    status: 'visiting',
+    priority: 0,
+    createdAt: '2024-06-21T08:30:00Z',
+    calledAt: '2024-06-21T08:35:00Z',
+  },
+  {
+    id: 'appt-2',
+    queueNumber: 'A002',
+    petId: 'pet-2',
+    roomId: 'room-2',
+    status: 'visiting',
+    priority: 0,
+    createdAt: '2024-06-21T08:32:00Z',
+    calledAt: '2024-06-21T08:38:00Z',
+  },
+  {
+    id: 'appt-3',
+    queueNumber: 'A003',
+    petId: 'pet-3',
+    roomId: 'room-1',
+    status: 'waiting',
+    priority: 0,
+    createdAt: '2024-06-21T08:40:00Z',
+  },
+  {
+    id: 'appt-4',
+    queueNumber: 'A004',
+    petId: 'pet-4',
+    roomId: 'room-1',
+    status: 'waiting',
+    priority: 0,
+    createdAt: '2024-06-21T08:45:00Z',
+  },
+  {
+    id: 'appt-5',
+    queueNumber: 'A005',
+    petId: 'pet-5',
+    roomId: 'room-2',
+    status: 'waiting',
+    priority: 0,
+    createdAt: '2024-06-21T08:50:00Z',
+  },
+];
+
+export const mockTreatmentItems: TreatmentItem[] = [
+  {
+    id: 'item-1',
+    name: '常规体检',
+    category: '检查',
+    basePrice: 80,
+    isSimple: true,
+    description: '基础健康检查，包括体温、心率、呼吸等',
+  },
+  {
+    id: 'item-2',
+    name: '疫苗接种',
+    category: '免疫',
+    basePrice: 120,
+    isSimple: true,
+    description: '常规疫苗接种服务',
+  },
+  {
+    id: 'item-3',
+    name: '驱虫',
+    category: '保健',
+    basePrice: 60,
+    isSimple: true,
+    description: '体内外驱虫服务',
+  },
+  {
+    id: 'item-4',
+    name: '血液检查',
+    category: '检查',
+    basePrice: 200,
+    isSimple: false,
+    description: '血常规及生化检查',
+  },
+  {
+    id: 'item-5',
+    name: 'X光检查',
+    category: '影像',
+    basePrice: 300,
+    isSimple: false,
+    description: 'X光透视及拍片检查',
+  },
+  {
+    id: 'item-6',
+    name: 'B超检查',
+    category: '影像',
+    basePrice: 350,
+    isSimple: false,
+    description: '腹部B超检查',
+  },
+  {
+    id: 'item-7',
+    name: '输液治疗',
+    category: '治疗',
+    basePrice: 250,
+    isSimple: false,
+    description: '静脉输液及药物治疗',
+  },
+  {
+    id: 'item-8',
+    name: '外科手术',
+    category: '手术',
+    basePrice: 800,
+    isSimple: false,
+    description: '常规外科手术治疗',
+  },
+];
+
+export const mockBills: Bill[] = [
+  {
+    id: 'bill-1',
+    appointmentId: 'appt-completed-1',
+    petId: 'pet-1',
+    items: [
+      {
+        id: 'bill-item-1',
+        treatmentItemId: 'item-1',
+        itemName: '常规体检',
+        unitPrice: 80,
+        quantity: 1,
+        subtotal: 80,
+        isSimple: true,
+      },
+      {
+        id: 'bill-item-2',
+        treatmentItemId: 'item-3',
+        itemName: '驱虫',
+        unitPrice: 60,
+        quantity: 1,
+        subtotal: 60,
+        isSimple: true,
+      },
+    ],
+    subtotal: 140,
+    basePriceAdjustment: 0,
+    ceilingPriceAdjustment: 0,
+    totalAmount: 140,
+    status: 'paid',
+    createdAt: '2024-06-20T10:00:00Z',
+    paidAt: '2024-06-20T10:30:00Z',
+  },
+  {
+    id: 'bill-2',
+    appointmentId: 'appt-completed-2',
+    petId: 'pet-2',
+    items: [
+      {
+        id: 'bill-item-3',
+        treatmentItemId: 'item-4',
+        itemName: '血液检查',
+        unitPrice: 200,
+        quantity: 1,
+        subtotal: 200,
+        isSimple: false,
+      },
+      {
+        id: 'bill-item-4',
+        treatmentItemId: 'item-5',
+        itemName: 'X光检查',
+        unitPrice: 300,
+        quantity: 1,
+        subtotal: 300,
+        isSimple: false,
+      },
+      {
+        id: 'bill-item-5',
+        treatmentItemId: 'item-7',
+        itemName: '输液治疗',
+        unitPrice: 250,
+        quantity: 2,
+        subtotal: 500,
+        isSimple: false,
+      },
+    ],
+    subtotal: 1000,
+    basePriceAdjustment: 0,
+    ceilingPriceAdjustment: 200,
+    totalAmount: 800,
+    status: 'paid',
+    createdAt: '2024-06-19T14:00:00Z',
+    paidAt: '2024-06-19T15:30:00Z',
+  },
+];
+
+export const mockMedicalRecords: MedicalRecord[] = [
+  {
+    id: 'record-1',
+    petId: 'pet-1',
+    appointmentId: 'appt-completed-1',
+    diagnosis: '健康状况良好，建议定期驱虫',
+    treatment: '常规体检 + 体内外驱虫',
+    notes: '主人需注意宠物饮食，避免过量喂食',
+    createdAt: '2024-06-20T10:30:00Z',
+  },
+  {
+    id: 'record-2',
+    petId: 'pet-2',
+    appointmentId: 'appt-completed-2',
+    diagnosis: '急性肠胃炎，伴有轻微脱水',
+    treatment: '输液治疗 + 药物治疗',
+    notes: '连续输液3天，注意观察精神状态',
+    createdAt: '2024-06-19T15:00:00Z',
+  },
+];
+
+export const defaultBillingConfig: BillingConfig = {
+  basePrice: 100,
+  ceilingPrice: 800,
+  avgVisitMinutes: 20,
+};
+
+export function generateId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+export function generateQueueNumber(currentNumber: number): string {
+  return `A${String(currentNumber).padStart(3, '0')}`;
+}
