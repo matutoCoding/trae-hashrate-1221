@@ -6,6 +6,9 @@ import {
   Bill,
   MedicalRecord,
   BillingConfig,
+  PaymentRecord,
+  RefundRecord,
+  Reservation,
 } from '../types';
 
 export const mockPets: Pet[] = [
@@ -103,6 +106,7 @@ export const mockAppointments: Appointment[] = [
     status: 'visiting',
     priority: 'normal',
     priorityLevel: 0,
+    source: 'walkin',
     createdAt: '2024-06-21T08:30:00Z',
     calledAt: '2024-06-21T08:35:00Z',
   },
@@ -114,6 +118,7 @@ export const mockAppointments: Appointment[] = [
     status: 'visiting',
     priority: 'normal',
     priorityLevel: 0,
+    source: 'walkin',
     createdAt: '2024-06-21T08:32:00Z',
     calledAt: '2024-06-21T08:38:00Z',
   },
@@ -125,6 +130,7 @@ export const mockAppointments: Appointment[] = [
     status: 'waiting',
     priority: 'normal',
     priorityLevel: 0,
+    source: 'walkin',
     createdAt: '2024-06-21T08:40:00Z',
   },
   {
@@ -135,6 +141,7 @@ export const mockAppointments: Appointment[] = [
     status: 'waiting',
     priority: 'followup',
     priorityLevel: 1,
+    source: 'walkin',
     createdAt: '2024-06-21T08:45:00Z',
   },
   {
@@ -145,6 +152,7 @@ export const mockAppointments: Appointment[] = [
     status: 'waiting',
     priority: 'emergency',
     priorityLevel: 2,
+    source: 'walkin',
     createdAt: '2024-06-21T08:50:00Z',
   },
 ];
@@ -216,6 +224,37 @@ export const mockTreatmentItems: TreatmentItem[] = [
   },
 ];
 
+const mockPaymentRecords: PaymentRecord[] = [
+  {
+    id: 'pay-1',
+    billId: 'bill-1',
+    amount: 140,
+    method: 'cash',
+    operator: '前台小王',
+    createdAt: '2024-06-20T10:30:00Z',
+  },
+  {
+    id: 'pay-2',
+    billId: 'bill-2',
+    amount: 800,
+    method: 'wechat',
+    operator: '前台小李',
+    createdAt: '2024-06-19T15:30:00Z',
+  },
+];
+
+const mockRefundRecords: RefundRecord[] = [
+  {
+    id: 'refund-1',
+    billId: 'bill-2',
+    amount: 100,
+    method: 'wechat',
+    operator: '前台小李',
+    reason: '项目调整',
+    createdAt: '2024-06-20T09:00:00Z',
+  },
+];
+
 export const mockBills: Bill[] = [
   {
     id: 'bill-1',
@@ -246,6 +285,10 @@ export const mockBills: Bill[] = [
     ceilingPriceAdjustment: 0,
     totalAmount: 140,
     status: 'paid',
+    paidAmount: 140,
+    refundedAmount: 0,
+    payments: mockPaymentRecords.filter((p) => p.billId === 'bill-1'),
+    refunds: [],
     createdAt: '2024-06-20T10:00:00Z',
     paidAt: '2024-06-20T10:30:00Z',
   },
@@ -286,7 +329,11 @@ export const mockBills: Bill[] = [
     basePriceAdjustment: 0,
     ceilingPriceAdjustment: 200,
     totalAmount: 800,
-    status: 'paid',
+    status: 'partially_refunded',
+    paidAmount: 800,
+    refundedAmount: 100,
+    payments: mockPaymentRecords.filter((p) => p.billId === 'bill-2'),
+    refunds: mockRefundRecords.filter((r) => r.billId === 'bill-2'),
     createdAt: '2024-06-19T14:00:00Z',
     paidAt: '2024-06-19T15:30:00Z',
   },
@@ -326,3 +373,65 @@ export function generateId(prefix: string): string {
 export function generateQueueNumber(currentNumber: number): string {
   return `A${String(currentNumber).padStart(3, '0')}`;
 }
+
+export const mockReservations: Reservation[] = [
+  {
+    id: 'res-1',
+    petId: 'pet-1',
+    petName: '豆豆',
+    ownerName: '张先生',
+    ownerPhone: '138****1234',
+    priority: 'normal',
+    priorityLevel: 0,
+    timeSlot: 'morning',
+    scheduledDate: new Date().toISOString().split('T')[0],
+    status: 'scheduled',
+    notes: '常规体检',
+    createdAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: 'res-2',
+    petId: 'pet-2',
+    petName: '咪咪',
+    ownerName: '李女士',
+    ownerPhone: '139****5678',
+    priority: 'followup',
+    priorityLevel: 1,
+    timeSlot: 'afternoon',
+    scheduledDate: new Date().toISOString().split('T')[0],
+    status: 'scheduled',
+    notes: '术后复诊',
+    createdAt: new Date(Date.now() - 172800000).toISOString(),
+  },
+  {
+    id: 'res-3',
+    petId: 'pet-3',
+    petName: '旺财',
+    ownerName: '王先生',
+    ownerPhone: '137****9012',
+    priority: 'normal',
+    priorityLevel: 0,
+    timeSlot: 'custom',
+    scheduledDate: new Date().toISOString().split('T')[0],
+    startTime: '10:30',
+    endTime: '11:30',
+    status: 'checked_in',
+    notes: '疫苗接种',
+    createdAt: new Date(Date.now() - 259200000).toISOString(),
+    checkedInAt: new Date(Date.now() - 3600000).toISOString(),
+  },
+  {
+    id: 'res-4',
+    petId: 'pet-4',
+    petName: '雪球',
+    ownerName: '赵女士',
+    ownerPhone: '136****3456',
+    priority: 'emergency',
+    priorityLevel: 2,
+    timeSlot: 'morning',
+    scheduledDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    status: 'scheduled',
+    notes: '紧急复查',
+    createdAt: new Date(Date.now() - 3600000).toISOString(),
+  },
+];

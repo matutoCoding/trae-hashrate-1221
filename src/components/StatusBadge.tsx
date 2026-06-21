@@ -17,7 +17,8 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   offline: { label: '离线', className: 'bg-slate-100 text-slate-500' },
   unpaid: { label: '待支付', className: 'bg-amber-100 text-amber-700' },
   paid: { label: '已支付', className: 'bg-emerald-100 text-emerald-700' },
-  refunded: { label: '已退款', className: 'bg-slate-100 text-slate-600' },
+  partially_refunded: { label: '部分退款', className: 'bg-orange-100 text-orange-700' },
+  refunded: { label: '已退款', className: 'bg-red-100 text-red-700' },
 };
 
 export default function StatusBadge({ status }: StatusBadgeProps) {

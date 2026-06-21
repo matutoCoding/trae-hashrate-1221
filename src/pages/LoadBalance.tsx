@@ -30,10 +30,11 @@ import {
   generateBatchTransferSuggestions,
   estimateWaitTime,
   previewTransferImpact,
+  previewBatchTransferImpact,
 } from '../utils/loadBalancer';
 import StatusBadge from '../components/StatusBadge';
 import PriorityBadge from '../components/PriorityBadge';
-import { TransferSuggestion, TriagePriority } from '../types';
+import { TransferSuggestion, TriagePriority, TransferItem } from '../types';
 
 export default function LoadBalance() {
   const { rooms, getRoomById } = useRoomStore();
@@ -44,7 +45,7 @@ export default function LoadBalance() {
     getWaitingQueue,
     getAppointmentById,
   } = useQueueStore();
-  const { getPetById } = usePetStore();
+  const { pets, getPetById } = usePetStore();
   const { billingConfig } = useSettingsStore();
 
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export default function LoadBalance() {
   const [previewMode, setPreviewMode] = useState(false);
 
   const loadInfos = calculateLoadBalance(rooms, appointments, billingConfig);
-  const batchSuggestions = generateBatchTransferSuggestions(rooms, appointments, billingConfig);
+  const batchSuggestions = generateBatchTransferSuggestions(rooms, appointments, billingConfig, pets);
 
   const activeRooms = rooms.filter((r) => r.status !== 'offline');
   const avgLoad =
@@ -67,29 +68,21 @@ export default function LoadBalance() {
     return Math.sqrt(variance);
   }, [loadInfos]);
 
-  const overallBalanceAfter = useMemo(() => {
-    if (selectedTransfers.size === 0) return overallBalanceBefore;
-    
-    const selectedSuggestions = batchSuggestions.filter((s) => selectedTransfers.has(s.appointmentId));
-    let tempAppointments = [...appointments];
-    
-    for (const suggestion of selectedSuggestions) {
-      tempAppointments = tempAppointments.map((a) =>
-        a.id === suggestion.appointmentId ? { ...a, roomId: suggestion.toRoomId } : a
-      );
-    }
-    
-    const newLoadInfos = calculateLoadBalance(rooms, tempAppointments, billingConfig);
-    const avg = newLoadInfos.reduce((sum, l) => sum + l.loadRate, 0) / newLoadInfos.length;
-    const variance = newLoadInfos.reduce((sum, l) => sum + Math.pow(l.loadRate - avg, 2), 0) / newLoadInfos.length;
-    return Math.sqrt(variance);
-  }, [selectedTransfers, batchSuggestions, rooms, appointments, billingConfig, overallBalanceBefore]);
+  const batchPreview = useMemo(() => {
+    if (selectedTransfers.size === 0) return null;
 
-  const totalImprovement = useMemo(() => {
-    if (selectedTransfers.size === 0) return 0;
     const selectedSuggestions = batchSuggestions.filter((s) => selectedTransfers.has(s.appointmentId));
-    return selectedSuggestions.reduce((sum, s) => sum + s.improvementMinutes, 0);
-  }, [selectedTransfers, batchSuggestions]);
+    const transfers: TransferItem[] = selectedSuggestions.map((s) => ({
+      appointmentId: s.appointmentId,
+      fromRoomId: s.fromRoomId,
+      toRoomId: s.toRoomId,
+    }));
+
+    return previewBatchTransferImpact(transfers, rooms, appointments, billingConfig, pets);
+  }, [selectedTransfers, batchSuggestions, rooms, appointments, billingConfig, pets]);
+
+  const overallBalanceAfter = batchPreview?.overallBalanceAfter ?? overallBalanceBefore;
+  const totalImprovement = batchPreview?.totalImprovementMinutes ?? 0;
 
   const maxLoad = Math.max(...loadInfos.map((l) => l.loadRate), 0.1);
 
@@ -608,12 +601,13 @@ export default function LoadBalance() {
                       targetRoomId,
                       rooms,
                       appointments,
-                      billingConfig
+                      billingConfig,
+                      pets
                     );
                     return (
                       <div className="space-y-1">
-                        <p>当前等待：{impact.currentWaitMinutes} 分钟</p>
-                        <p>预计等待：{impact.estimatedWaitMinutesAfter} 分钟</p>
+                        <p>当前等待：{impact.currentWaitMinutes} 分钟（第{impact.currentPosition}位）</p>
+                        <p>预计等待：{impact.estimatedWaitMinutesAfter} 分钟（第{impact.estimatedPositionAfter}位）</p>
                         <p className="text-emerald-600 font-medium">
                           改善：{impact.improvementMinutes} 分钟
                         </p>

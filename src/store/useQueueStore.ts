@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Appointment, Pet, TriagePriority, triagePriorityConfig, BillItem } from '../types';
+import { Appointment, Pet, TriagePriority, triagePriorityConfig, BillItem, AppointmentSource } from '../types';
 import { mockAppointments, generateId, generateQueueNumber } from '../utils/mock';
 import { useRoomStore } from './useRoomStore';
 import { useSettingsStore } from './useSettingsStore';
@@ -21,7 +21,7 @@ interface QueueState {
   appointments: Appointment[];
   currentQueueNumber: number;
 
-  createAppointment: (pet: Pet, priority?: TriagePriority) => Appointment;
+  createAppointment: (pet: Pet, priority?: TriagePriority, source?: AppointmentSource, reservationId?: string) => Appointment;
   callNext: (roomId: string) => Appointment | null;
   startVisit: (appointmentId: string) => void;
   completeAppointment: (appointmentId: string) => void;
@@ -58,7 +58,7 @@ export const useQueueStore = create<QueueState>()(
       appointments: mockAppointments,
       currentQueueNumber: 5,
 
-      createAppointment: (pet, priority = 'normal') => {
+      createAppointment: (pet, priority = 'normal', source = 'walkin', reservationId) => {
         const { rooms } = useRoomStore.getState();
         const { billingConfig } = useSettingsStore.getState();
 
@@ -78,6 +78,8 @@ export const useQueueStore = create<QueueState>()(
           status: 'waiting',
           priority,
           priorityLevel: priorityConfig.level,
+          source,
+          reservationId: source === 'reservation' ? reservationId : undefined,
           createdAt: new Date().toISOString(),
         };
 

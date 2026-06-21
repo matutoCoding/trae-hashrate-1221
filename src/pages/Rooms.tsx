@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Stethoscope,
   Play,
@@ -19,6 +19,7 @@ import { useRoomStore } from '../store/useRoomStore';
 import { useQueueStore } from '../store/useQueueStore';
 import { usePetStore } from '../store/usePetStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { useBillingStore } from '../store/useBillingStore';
 import StatusBadge from '../components/StatusBadge';
 import PriorityBadge from '../components/PriorityBadge';
 import { TreatmentItem, TriagePriority } from '../types';
@@ -44,6 +45,7 @@ export default function Rooms() {
   } = useQueueStore();
   const { getPetById } = usePetStore();
   const { treatmentItems } = useSettingsStore();
+  const { calculatePreliminaryBill } = useBillingStore();
 
   const [selectedRoomId, setSelectedRoomId] = useState(rooms[0]?.id || '');
   const [showCompleteForm, setShowCompleteForm] = useState(false);
@@ -149,12 +151,19 @@ export default function Rooms() {
     }
   };
 
-  const calculateSubtotal = () => {
-    return selectedItems.reduce((sum, si) => {
+  const preliminaryBill = useMemo(() => {
+    const items = selectedItems.map((si) => {
       const item = treatmentItems.find((ti) => ti.id === si.itemId);
-      return sum + (item?.basePrice || 0) * si.quantity;
-    }, 0);
-  };
+      return {
+        treatmentItemId: si.itemId,
+        itemName: item?.name || '',
+        quantity: si.quantity,
+        unitPrice: item?.basePrice || 0,
+        isSimple: item?.isSimple || false,
+      };
+    });
+    return calculatePreliminaryBill(items);
+  }, [selectedItems, treatmentItems, calculatePreliminaryBill]);
 
   return (
     <div className="space-y-6">
@@ -500,7 +509,7 @@ export default function Rooms() {
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-sm font-medium text-slate-700">已选项目</span>
                       <span className="text-sm font-bold text-slate-800">
-                        小计：¥{calculateSubtotal().toFixed(2)}
+                        项目小计：¥{preliminaryBill.subtotal.toFixed(2)}
                       </span>
                     </div>
                     <div className="space-y-2">
@@ -547,6 +556,93 @@ export default function Rooms() {
                     </div>
                   </div>
                 )}
+
+                {selectedItems.length > 0 && (
+                  <div className="bg-slate-100 rounded-xl p-4 mt-4">
+                    <div className="text-sm font-medium text-slate-700 mb-3">费用预估</div>
+
+                    {preliminaryBill.breakdown.simpleItems.length > 0 && (
+                      <div className="mb-3">
+                        <div className="text-xs text-slate-500 mb-1">简单项目</div>
+                        <div className="space-y-1">
+                          {preliminaryBill.breakdown.simpleItems.map((item) => (
+                            <div key={item.id} className="flex justify-between text-xs text-slate-600">
+                              <span>{item.itemName} × {item.quantity}</span>
+                              <span>¥{item.subtotal.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between text-xs font-medium text-slate-700 mt-1 pt-1 border-t border-slate-200">
+                          <span>简单项目小计</span>
+                          <span>¥{preliminaryBill.breakdown.simpleItemsSubtotal.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {preliminaryBill.breakdown.complexItems.length > 0 && (
+                      <div className="mb-3">
+                        <div className="text-xs text-slate-500 mb-1">复杂项目</div>
+                        <div className="space-y-1">
+                          {preliminaryBill.breakdown.complexItems.map((item) => (
+                            <div key={item.id} className="flex justify-between text-xs text-slate-600">
+                              <span>{item.itemName} × {item.quantity}</span>
+                              <span>¥{item.subtotal.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between text-xs font-medium text-slate-700 mt-1 pt-1 border-t border-slate-200">
+                          <span>复杂项目小计</span>
+                          <span>¥{preliminaryBill.breakdown.complexItemsSubtotal.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {preliminaryBill.breakdown.hasBasePriceAdjustment && (
+                      <div className="flex justify-between text-xs text-amber-600 mb-2">
+                        <span>起步价补足</span>
+                        <span>+¥{preliminaryBill.breakdown.basePriceAdjustment.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {preliminaryBill.breakdown.hasCeilingPriceAdjustment && (
+                      <div className="flex justify-between text-xs text-emerald-600 mb-2">
+                        <span>封顶价优惠</span>
+                        <span>-¥{preliminaryBill.breakdown.ceilingPriceAdjustment.toFixed(2)}</span>
+                      </div>
+                    )}
+
+                    {preliminaryBill.breakdown.hasMixedItems && (
+                      <div className="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2 mb-3">
+                        混合项目：复杂项目部分封顶，简单项目按原价
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-300">
+                      <span className="text-sm font-medium text-slate-700">预估总金额</span>
+                      <span className="text-2xl font-bold text-emerald-600">
+                        ¥{preliminaryBill.totalAmount.toFixed(2)}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 pt-3 border-t border-slate-200 space-y-1">
+                      {preliminaryBill.breakdown.complexItems.length === 0 && preliminaryBill.breakdown.simpleItems.length > 0 && (
+                        <div className="text-xs text-slate-400">
+                          简单项目：不足起步价按起步价收取（起步价 ¥{preliminaryBill.breakdown.basePrice.toFixed(2)}）
+                        </div>
+                      )}
+                      {preliminaryBill.breakdown.simpleItems.length === 0 && preliminaryBill.breakdown.complexItems.length > 0 && (
+                        <div className="text-xs text-slate-400">
+                          复杂项目：超过封顶价按封顶价收取（封顶价 ¥{preliminaryBill.breakdown.ceilingPrice.toFixed(2)}）
+                        </div>
+                      )}
+                      {preliminaryBill.breakdown.hasMixedItems && (
+                        <div className="text-xs text-slate-400">
+                          混合项目：复杂项目部分封顶，简单项目按原价
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -554,7 +650,7 @@ export default function Rooms() {
               <div>
                 <span className="text-sm text-slate-500">预计费用：</span>
                 <span className="text-2xl font-bold text-emerald-600 ml-2">
-                  ¥{calculateSubtotal().toFixed(2)}
+                  ¥{preliminaryBill.totalAmount.toFixed(2)}
                 </span>
               </div>
               <div className="flex gap-3">

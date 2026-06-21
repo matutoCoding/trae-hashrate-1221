@@ -30,6 +30,8 @@ export interface Room {
   currentAppointmentId?: string;
 }
 
+export type AppointmentSource = 'walkin' | 'reservation';
+
 export type AppointmentStatus = 'waiting' | 'called' | 'visiting' | 'completed' | 'cancelled';
 
 export interface Appointment {
@@ -40,9 +42,34 @@ export interface Appointment {
   status: AppointmentStatus;
   priority: TriagePriority;
   priorityLevel: number;
+  source: AppointmentSource;
+  reservationId?: string;
   createdAt: string;
   calledAt?: string;
   completedAt?: string;
+}
+
+export type ReservationTimeSlot = 'morning' | 'afternoon' | 'custom';
+
+export type ReservationStatus = 'scheduled' | 'checked_in' | 'cancelled' | 'no_show';
+
+export interface Reservation {
+  id: string;
+  petId: string;
+  petName: string;
+  ownerName: string;
+  ownerPhone: string;
+  priority: TriagePriority;
+  priorityLevel: number;
+  timeSlot: ReservationTimeSlot;
+  scheduledDate: string;
+  startTime?: string;
+  endTime?: string;
+  status: ReservationStatus;
+  appointmentId?: string;
+  notes?: string;
+  createdAt: string;
+  checkedInAt?: string;
 }
 
 export interface TreatmentItem {
@@ -64,7 +91,38 @@ export interface BillItem {
   isSimple: boolean;
 }
 
-export type BillStatus = 'unpaid' | 'paid' | 'refunded';
+export type PaymentMethod = 'cash' | 'wechat' | 'alipay' | 'member_balance';
+
+export const paymentMethodConfig: Record<PaymentMethod, { label: string; icon: string; color: string }> = {
+  cash: { label: '现金', icon: '💵', color: 'emerald' },
+  wechat: { label: '微信支付', icon: '💚', color: 'green' },
+  alipay: { label: '支付宝', icon: '💙', color: 'blue' },
+  member_balance: { label: '会员余额', icon: '💳', color: 'purple' },
+};
+
+export type PaymentStatus = 'pending' | 'paid' | 'partially_refunded' | 'fully_refunded';
+
+export interface PaymentRecord {
+  id: string;
+  billId: string;
+  amount: number;
+  method: PaymentMethod;
+  operator: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface RefundRecord {
+  id: string;
+  billId: string;
+  amount: number;
+  method: PaymentMethod;
+  operator: string;
+  reason: string;
+  createdAt: string;
+}
+
+export type BillStatus = 'unpaid' | 'paid' | 'partially_refunded' | 'refunded';
 
 export interface Bill {
   id: string;
@@ -76,6 +134,10 @@ export interface Bill {
   ceilingPriceAdjustment: number;
   totalAmount: number;
   status: BillStatus;
+  paidAmount: number;
+  refundedAmount: number;
+  payments: PaymentRecord[];
+  refunds: RefundRecord[];
   createdAt: string;
   paidAt?: string;
 }
@@ -116,6 +178,35 @@ export interface TransferSuggestion {
   currentWaitMinutes: number;
   estimatedWaitMinutesAfter: number;
   improvementMinutes: number;
+}
+
+export interface TransferImpactPreview {
+  appointmentId: string;
+  queueNumber: string;
+  petName: string;
+  fromRoomId: string;
+  fromRoomName: string;
+  toRoomId: string;
+  toRoomName: string;
+  currentWaitMinutes: number;
+  estimatedWaitMinutesAfter: number;
+  improvementMinutes: number;
+  currentPosition: number;
+  estimatedPositionAfter: number;
+}
+
+export interface BatchTransferImpactPreview {
+  items: TransferImpactPreview[];
+  totalImprovementMinutes: number;
+  overallBalanceBefore: number;
+  overallBalanceAfter: number;
+  balanceImprovementPercent: number;
+}
+
+export interface TransferItem {
+  appointmentId: string;
+  fromRoomId: string;
+  toRoomId: string;
 }
 
 export interface BillingBreakdown {

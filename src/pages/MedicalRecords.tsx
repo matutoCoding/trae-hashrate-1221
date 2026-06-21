@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { FileText, Search, Calendar, Stethoscope, ClipboardList, Plus, Receipt, ArrowRight, Link2 } from 'lucide-react';
+import { FileText, Search, Calendar, Stethoscope, ClipboardList, Plus, Receipt, ArrowRight, Link2, TrendingUp, Wallet, RefreshCw } from 'lucide-react';
 import { usePetStore } from '../store/usePetStore';
 import { useMedicalRecordStore } from '../store/useMedicalRecordStore';
 import { useBillingStore } from '../store/useBillingStore';
 import { formatPrice } from '../utils/billing';
+import { paymentMethodConfig } from '../types';
 
 export default function MedicalRecords() {
   const { pets, getPetById, searchPets } = usePetStore();
@@ -23,6 +24,11 @@ export default function MedicalRecords() {
   const selectedPet = selectedPetId ? getPetById(selectedPetId) : null;
   const petRecords = selectedPetId ? getRecordsByPetId(selectedPetId) : [];
   const petBills = selectedPetId ? getBillsByPetId(selectedPetId) : [];
+  const { getPaymentRecordsByBillId, getRefundRecordsByBillId } = useBillingStore();
+
+  const totalSpent = petBills.reduce((sum, bill) => sum + bill.paidAmount, 0);
+  const totalRefunded = petBills.reduce((sum, bill) => sum + bill.refundedAmount, 0);
+  const netSpent = totalSpent - totalRefunded;
 
   const handleAddRecord = () => {
     if (!selectedPetId || !formData.diagnosis) return;
@@ -143,6 +149,42 @@ export default function MedicalRecords() {
                         <p className="text-xs text-white/70">账单数</p>
                         <p className="font-medium">{petBills.length} 笔</p>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-white rounded-2xl shadow-sm p-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
+                      <TrendingUp className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">累计消费</p>
+                      <p className="text-xl font-bold text-emerald-600">{formatPrice(totalSpent)}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm p-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+                      <RefreshCw className="w-5 h-5 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">累计退款</p>
+                      <p className="text-xl font-bold text-red-500">{formatPrice(totalRefunded)}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl shadow-sm p-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                      <Wallet className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">实际花费</p>
+                      <p className="text-xl font-bold text-blue-600">{formatPrice(netSpent)}</p>
                     </div>
                   </div>
                 </div>
@@ -276,7 +318,7 @@ export default function MedicalRecords() {
                                 </div>
                               )}
                               {record.billId && (
-                                <div className="pt-3 border-t border-slate-200">
+                                <div className="pt-3 border-t border-slate-200 space-y-3">
                                   <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2 text-sm">
                                       <Link2 className="w-4 h-4 text-blue-500" />
@@ -287,32 +329,80 @@ export default function MedicalRecords() {
                                       {(() => {
                                         const bill = petBills.find((b) => b.id === record.billId);
                                         if (!bill) return null;
+                                        const statusMap: Record<string, { label: string; color: string }> = {
+                                          unpaid: { label: '待支付', color: 'text-amber-600' },
+                                          paid: { label: '已支付', color: 'text-emerald-600' },
+                                          partially_refunded: { label: '部分退款', color: 'text-orange-600' },
+                                          refunded: { label: '已退款', color: 'text-red-600' },
+                                        };
+                                        const status = statusMap[bill.status] || statusMap.unpaid;
                                         return (
                                           <>
-                                            <span className={`text-sm font-medium ${
-                                              bill.status === 'paid' ? 'text-emerald-600' :
-                                              bill.status === 'refunded' ? 'text-red-600' : 'text-amber-600'
-                                            }`}>
-                                              {bill.status === 'paid' ? '已支付' :
-                                               bill.status === 'refunded' ? '已退款' : '待支付'}
+                                            <span className={`text-sm font-medium ${status.color}`}>
+                                              {status.label}
                                             </span>
                                             <span className="text-sm font-semibold text-slate-800">
                                               {formatPrice(bill.totalAmount)}
                                             </span>
-                                            <button
-                                              onClick={() => {
-                                                alert(`账单详情：\n账单号：${bill.id}\n金额：${formatPrice(bill.totalAmount)}\n状态：${bill.status}`);
-                                              }}
-                                              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
-                                            >
-                                              查看账单
-                                              <ArrowRight className="w-3 h-3" />
-                                            </button>
                                           </>
                                         );
                                       })()}
                                     </div>
                                   </div>
+                                  {(() => {
+                                    const bill = petBills.find((b) => b.id === record.billId);
+                                    if (!bill) return null;
+                                    const payments = getPaymentRecordsByBillId(bill.id);
+                                    const refunds = getRefundRecordsByBillId(bill.id);
+                                    return (
+                                      <div className="bg-slate-100 rounded-lg p-3 space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                          <span className="text-slate-500">应收金额</span>
+                                          <span className="font-medium text-slate-700">{formatPrice(bill.totalAmount)}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-xs">
+                                          <span className="text-slate-500">已收金额</span>
+                                          <span className="font-medium text-emerald-600">{formatPrice(bill.paidAmount)}</span>
+                                        </div>
+                                        {bill.refundedAmount > 0 && (
+                                          <div className="flex items-center justify-between text-xs">
+                                            <span className="text-slate-500">已退金额</span>
+                                            <span className="font-medium text-red-500">{formatPrice(bill.refundedAmount)}</span>
+                                          </div>
+                                        )}
+                                        {payments.length > 0 && (
+                                          <div className="pt-2 border-t border-slate-200">
+                                            <p className="text-xs text-slate-500 mb-2">支付记录</p>
+                                            {payments.map((p) => (
+                                              <div key={p.id} className="flex items-center justify-between text-xs py-1">
+                                                <div className="flex items-center gap-1">
+                                                  <span>{paymentMethodConfig[p.method].icon}</span>
+                                                  <span className="text-slate-600">{paymentMethodConfig[p.method].label}</span>
+                                                  <span className="text-slate-400">·</span>
+                                                  <span className="text-slate-400">{p.operator}</span>
+                                                </div>
+                                                <span className="font-medium text-emerald-600">+{formatPrice(p.amount)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                        {refunds.length > 0 && (
+                                          <div className="pt-2 border-t border-slate-200">
+                                            <p className="text-xs text-slate-500 mb-2">退款记录</p>
+                                            {refunds.map((r) => (
+                                              <div key={r.id} className="flex items-center justify-between text-xs py-1">
+                                                <div className="flex items-center gap-1">
+                                                  <span>{paymentMethodConfig[r.method].icon}</span>
+                                                  <span className="text-slate-600">{r.reason}</span>
+                                                </div>
+                                                <span className="font-medium text-red-500">-{formatPrice(r.amount)}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               )}
                             </div>

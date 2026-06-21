@@ -15,16 +15,30 @@ import {
   Link2,
   Stethoscope,
   ArrowRight,
+  CreditCard,
+  Wallet,
+  User,
+  MessageSquare,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from 'lucide-react';
 import { useBillingStore } from '../store/useBillingStore';
 import { usePetStore } from '../store/usePetStore';
 import { useMedicalRecordStore } from '../store/useMedicalRecordStore';
 import StatusBadge from '../components/StatusBadge';
 import { formatPrice } from '../utils/billing';
-import { BillStatus } from '../types';
+import { BillStatus, PaymentMethod, paymentMethodConfig } from '../types';
 
 export default function Bills() {
-  const { bills, payBill, refundBill, getBillById } = useBillingStore();
+  const {
+    bills,
+    payBill,
+    refundBill,
+    getBillById,
+    getPaymentRecordsByBillId,
+    getRefundRecordsByBillId,
+  } = useBillingStore();
   const { getPetById } = usePetStore();
   const { getRecordByBillId } = useMedicalRecordStore();
 
@@ -32,42 +46,121 @@ export default function Bills() {
   const [statusFilter, setStatusFilter] = useState<BillStatus | 'all'>('all');
   const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [showRefundModal, setShowRefundModal] = useState(false);
 
-  const filteredBills = bills.filter((bill) => {
-    if (statusFilter !== 'all' && bill.status !== statusFilter) return false;
+  const [payMethod, setPayMethod] = useState<PaymentMethod>('cash');
+  const [payAmount, setPayAmount] = useState('');
+  const [payOperator, setPayOperator] = useState('');
+  const [payNote, setPayNote] = useState('');
 
-    if (searchKeyword) {
-      const pet = getPetById(bill.petId);
-      const keyword = searchKeyword.toLowerCase();
-      return (
-        pet?.name.toLowerCase().includes(keyword) ||
-        pet?.ownerName.toLowerCase().includes(keyword) ||
-        bill.id.toLowerCase().includes(keyword)
-      );
-    }
-    return true;
-  }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const [refundMethod, setRefundMethod] = useState<PaymentMethod>('cash');
+  const [refundAmount, setRefundAmount] = useState('');
+  const [refundReason, setRefundReason] = useState('');
+  const [refundOperator, setRefundOperator] = useState('');
+
+  const filteredBills = bills
+    .filter((bill) => {
+      if (statusFilter !== 'all' && bill.status !== statusFilter) return false;
+
+      if (searchKeyword) {
+        const pet = getPetById(bill.petId);
+        const keyword = searchKeyword.toLowerCase();
+        return (
+          pet?.name.toLowerCase().includes(keyword) ||
+          pet?.ownerName.toLowerCase().includes(keyword) ||
+          bill.id.toLowerCase().includes(keyword)
+        );
+      }
+      return true;
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   const selectedBill = selectedBillId ? getBillById(selectedBillId) : null;
   const selectedPet = selectedBill ? getPetById(selectedBill.petId) : null;
+  const paymentRecords = selectedBillId ? getPaymentRecordsByBillId(selectedBillId) : [];
+  const refundRecords = selectedBillId ? getRefundRecordsByBillId(selectedBillId) : [];
 
-  const handlePay = (billId: string) => {
-    if (confirm('确认支付该账单？')) {
-      payBill(billId);
-    }
+  const handleOpenPayModal = (billId: string) => {
+    const bill = getBillById(billId);
+    if (!bill) return;
+    setSelectedBillId(billId);
+    setPayAmount((bill.totalAmount - bill.paidAmount).toFixed(2));
+    setPayMethod('cash');
+    setPayOperator('');
+    setPayNote('');
+    setShowPayModal(true);
   };
 
-  const handleRefund = (billId: string) => {
-    if (confirm('确认退款该账单？')) {
-      refundBill(billId);
+  const handlePay = () => {
+    if (!selectedBillId) return;
+    const amount = parseFloat(payAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('请输入有效金额');
+      return;
     }
+    if (!payOperator.trim()) {
+      alert('请输入操作员姓名');
+      return;
+    }
+    payBill(selectedBillId, amount, payMethod, payOperator.trim(), payNote.trim() || undefined);
+    setShowPayModal(false);
   };
 
-  const totalAmount = bills
-    .filter((b) => b.status === 'paid')
-    .reduce((sum, b) => sum + b.totalAmount, 0);
+  const handleOpenRefundModal = (billId: string) => {
+    const bill = getBillById(billId);
+    if (!bill) return;
+    setSelectedBillId(billId);
+    setRefundAmount(bill.paidAmount.toFixed(2));
+    setRefundMethod('cash');
+    setRefundReason('');
+    setRefundOperator('');
+    setShowRefundModal(true);
+  };
 
+  const handleRefund = () => {
+    if (!selectedBillId) return;
+    const bill = getBillById(selectedBillId);
+    if (!bill) return;
+    const amount = parseFloat(refundAmount);
+    if (isNaN(amount) || amount <= 0) {
+      alert('请输入有效金额');
+      return;
+    }
+    if (amount > bill.paidAmount) {
+      alert('退款金额不能超过已付金额');
+      return;
+    }
+    if (!refundOperator.trim()) {
+      alert('请输入操作员姓名');
+      return;
+    }
+    if (!refundReason.trim()) {
+      alert('请输入退款原因');
+      return;
+    }
+    refundBill(selectedBillId, amount, refundMethod, refundOperator.trim(), refundReason.trim());
+    setShowRefundModal(false);
+  };
+
+  const getPrimaryPaymentMethod = (billId: string) => {
+    const payments = getPaymentRecordsByBillId(billId);
+    if (payments.length === 0) return null;
+    return payments[payments.length - 1].method;
+  };
+
+  const totalPaidAmount = bills.reduce((sum, b) => sum + b.paidAmount, 0);
+  const totalRefundedAmount = bills.reduce((sum, b) => sum + b.refundedAmount, 0);
   const unpaidCount = bills.filter((b) => b.status === 'unpaid').length;
+
+  const simpleItems = selectedBill?.items.filter((item) => item.isSimple) || [];
+  const complexItems = selectedBill?.items.filter((item) => !item.isSimple) || [];
+  const simpleItemsSubtotal = simpleItems.reduce((sum, item) => sum + item.subtotal, 0);
+  const complexItemsSubtotal = complexItems.reduce((sum, item) => sum + item.subtotal, 0);
+
+  const remainingAmount = selectedBill
+    ? Math.max(0, selectedBill.totalAmount - selectedBill.paidAmount + selectedBill.refundedAmount)
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -104,26 +197,22 @@ export default function Bills() {
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center">
-              <CheckCircle className="w-5 h-5 text-emerald-600" />
+              <TrendingUp className="w-5 h-5 text-emerald-600" />
             </div>
             <div>
               <p className="text-sm text-slate-500">已收款</p>
-              <p className="text-2xl font-bold text-emerald-600">
-                {formatPrice(totalAmount)}
-              </p>
+              <p className="text-2xl font-bold text-emerald-600">{formatPrice(totalPaidAmount)}</p>
             </div>
           </div>
         </div>
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center">
-              <XCircle className="w-5 h-5 text-slate-600" />
+            <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
+              <TrendingDown className="w-5 h-5 text-red-600" />
             </div>
             <div>
               <p className="text-sm text-slate-500">已退款</p>
-              <p className="text-2xl font-bold text-slate-600">
-                {bills.filter((b) => b.status === 'refunded').length}
-              </p>
+              <p className="text-2xl font-bold text-red-600">{formatPrice(totalRefundedAmount)}</p>
             </div>
           </div>
         </div>
@@ -154,6 +243,7 @@ export default function Bills() {
               <option value="all">全部状态</option>
               <option value="unpaid">待支付</option>
               <option value="paid">已支付</option>
+              <option value="partially_refunded">部分退款</option>
               <option value="refunded">已退款</option>
             </select>
           </div>
@@ -163,33 +253,22 @@ export default function Bills() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-100">
-                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                  账单号
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                  患宠
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                  项目数
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                  金额
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                  状态
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                  创建时间
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                  操作
-                </th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">账单号</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">患宠</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">项目数</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">应付金额</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">已付金额</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">退款金额</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">支付方式</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">状态</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">创建时间</th>
+                <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">操作</th>
               </tr>
             </thead>
             <tbody>
               {filteredBills.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={10} className="py-12 text-center text-slate-400">
                     <Receipt className="w-10 h-10 mx-auto mb-2 opacity-50" />
                     <p>暂无账单记录</p>
                   </td>
@@ -197,6 +276,7 @@ export default function Bills() {
               ) : (
                 filteredBills.map((bill) => {
                   const pet = getPetById(bill.petId);
+                  const primaryMethod = getPrimaryPaymentMethod(bill.id);
 
                   return (
                     <tr
@@ -214,8 +294,8 @@ export default function Bills() {
                             {pet?.species === 'dog'
                               ? '🐕'
                               : pet?.species === 'cat'
-                              ? '🐱'
-                              : '🐾'}
+                                ? '🐱'
+                                : '🐾'}
                           </span>
                           <div>
                             <p className="font-medium text-slate-800">{pet?.name}</p>
@@ -225,9 +305,29 @@ export default function Bills() {
                       </td>
                       <td className="py-4 px-4 text-slate-600">{bill.items.length} 项</td>
                       <td className="py-4 px-4">
-                        <span className="font-semibold text-emerald-600">
+                        <span className="font-semibold text-slate-700">
                           {formatPrice(bill.totalAmount)}
                         </span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className="font-semibold text-emerald-600">
+                          {formatPrice(bill.paidAmount)}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4">
+                        <span className="font-semibold text-red-500">
+                          {bill.refundedAmount > 0 ? formatPrice(bill.refundedAmount) : '-'}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4">
+                        {primaryMethod ? (
+                          <span className="inline-flex items-center gap-1 text-sm text-slate-600">
+                            <span>{paymentMethodConfig[primaryMethod].icon}</span>
+                            <span>{paymentMethodConfig[primaryMethod].label}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-sm">-</span>
+                        )}
                       </td>
                       <td className="py-4 px-4">
                         <StatusBadge status={bill.status} type="bill" />
@@ -252,24 +352,27 @@ export default function Bills() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          {bill.status === 'unpaid' && (
+                          {(bill.status === 'unpaid' ||
+                            (bill.status === 'partially_refunded' &&
+                              bill.paidAmount < bill.totalAmount)) && (
                             <button
-                              onClick={() => handlePay(bill.id)}
+                              onClick={() => handleOpenPayModal(bill.id)}
                               className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                              title="确认收款"
+                              title="收款"
                             >
                               <CheckCircle className="w-4 h-4" />
                             </button>
                           )}
-                          {bill.status === 'paid' && (
-                            <button
-                              onClick={() => handleRefund(bill.id)}
-                              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="退款"
-                            >
-                              <XCircle className="w-4 h-4" />
-                            </button>
-                          )}
+                          {(bill.status === 'paid' || bill.status === 'partially_refunded') &&
+                            bill.paidAmount > bill.refundedAmount && (
+                              <button
+                                onClick={() => handleOpenRefundModal(bill.id)}
+                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                title="退款"
+                              >
+                                <XCircle className="w-4 h-4" />
+                              </button>
+                            )}
                         </div>
                       </td>
                     </tr>
@@ -283,8 +386,8 @@ export default function Bills() {
 
       {showDetail && selectedBill && selectedPet && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6 border-b border-slate-100">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-100 sticky top-0 bg-white z-10">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
                   <Receipt className="w-5 h-5 text-emerald-500" />
@@ -306,8 +409,8 @@ export default function Bills() {
                     {selectedPet.species === 'dog'
                       ? '🐕'
                       : selectedPet.species === 'cat'
-                      ? '🐱'
-                      : '🐾'}
+                        ? '🐱'
+                        : '🐾'}
                   </div>
                   <div>
                     <p className="font-medium text-slate-800">{selectedPet.name}</p>
@@ -330,7 +433,9 @@ export default function Bills() {
                       </div>
                       <button
                         onClick={() => {
-                          alert(`病历详情：\n诊断：${record.diagnosis}\n治疗：${record.treatment || '无'}\n备注：${record.notes || '无'}`);
+                          alert(
+                            `病历详情：\n诊断：${record.diagnosis}\n治疗：${record.treatment || '无'}\n备注：${record.notes || '无'}`
+                          );
                         }}
                         className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
                       >
@@ -360,34 +465,72 @@ export default function Bills() {
                 );
               })()}
 
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-slate-700">诊疗项目</p>
-                <div className="space-y-2">
-                  {selectedBill.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
-                    >
-                      <div>
-                        <p className="font-medium text-slate-800">{item.itemName}</p>
-                        <p className="text-xs text-slate-500">
-                          {formatPrice(item.unitPrice)} × {item.quantity}
-                        </p>
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-slate-700">费用分解</p>
+
+                {simpleItems.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-500 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                      简单项目
+                    </p>
+                    {simpleItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl ml-3"
+                      >
+                        <div>
+                          <p className="font-medium text-slate-800 text-sm">{item.itemName}</p>
+                          <p className="text-xs text-slate-500">
+                            {formatPrice(item.unitPrice)} × {item.quantity}
+                          </p>
+                        </div>
+                        <span className="font-medium text-slate-700 text-sm">
+                          {formatPrice(item.subtotal)}
+                        </span>
                       </div>
-                      <span className="font-medium text-slate-700">
-                        {formatPrice(item.subtotal)}
-                      </span>
+                    ))}
+                    <div className="flex justify-between text-xs text-slate-500 ml-3">
+                      <span>简单项目小计</span>
+                      <span className="font-medium">{formatPrice(simpleItemsSubtotal)}</span>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {complexItems.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-500 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+                      复杂项目
+                    </p>
+                    {complexItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl ml-3"
+                      >
+                        <div>
+                          <p className="font-medium text-slate-800 text-sm">{item.itemName}</p>
+                          <p className="text-xs text-slate-500">
+                            {formatPrice(item.unitPrice)} × {item.quantity}
+                          </p>
+                        </div>
+                        <span className="font-medium text-slate-700 text-sm">
+                          {formatPrice(item.subtotal)}
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-xs text-slate-500 ml-3">
+                      <span>复杂项目小计</span>
+                      <span className="font-medium">{formatPrice(complexItemsSubtotal)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2 border-t border-slate-100 pt-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-slate-500">项目小计</span>
-                  <span className="text-slate-700">
-                    {formatPrice(selectedBill.subtotal)}
-                  </span>
+                  <span className="text-slate-700">{formatPrice(selectedBill.subtotal)}</span>
                 </div>
                 {selectedBill.basePriceAdjustment > 0 && (
                   <div className="flex justify-between text-sm">
@@ -419,7 +562,132 @@ export default function Bills() {
                 </div>
               </div>
 
-              <div className="flex gap-3">
+              <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl">
+                <div className="text-center">
+                  <p className="text-xs text-slate-500 mb-1">实付金额</p>
+                  <p className="text-lg font-bold text-emerald-600">
+                    {formatPrice(selectedBill.paidAmount)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-slate-500 mb-1">退款金额</p>
+                  <p className="text-lg font-bold text-red-500">
+                    {formatPrice(selectedBill.refundedAmount)}
+                  </p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-slate-500 mb-1">待付金额</p>
+                  <p className="text-lg font-bold text-amber-600">
+                    {formatPrice(remainingAmount)}
+                  </p>
+                </div>
+              </div>
+
+              {paymentRecords.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-emerald-500" />
+                    支付记录
+                  </p>
+                  <div className="space-y-2">
+                    {paymentRecords.map((record) => (
+                      <div
+                        key={record.id}
+                        className="p-3 bg-emerald-50 rounded-xl border border-emerald-100"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">
+                              {paymentMethodConfig[record.method].icon}
+                            </span>
+                            <span className="font-medium text-emerald-800 text-sm">
+                              {paymentMethodConfig[record.method].label}
+                            </span>
+                          </div>
+                          <span className="font-bold text-emerald-600">
+                            +{formatPrice(record.amount)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-emerald-600">
+                          <span className="flex items-center gap-1">
+                            <User className="w-3 h-3" />
+                            {record.operator}
+                          </span>
+                          <span>
+                            {new Date(record.createdAt).toLocaleString('zh-CN', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        {record.note && (
+                          <div className="mt-2 pt-2 border-t border-emerald-100">
+                            <p className="text-xs text-emerald-700 flex items-center gap-1">
+                              <MessageSquare className="w-3 h-3" />
+                              备注：{record.note}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {refundRecords.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-red-500" />
+                    退款记录
+                  </p>
+                  <div className="space-y-2">
+                    {refundRecords.map((record) => (
+                      <div
+                        key={record.id}
+                        className="p-3 bg-red-50 rounded-xl border border-red-100"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">
+                              {paymentMethodConfig[record.method].icon}
+                            </span>
+                            <span className="font-medium text-red-800 text-sm">
+                              {paymentMethodConfig[record.method].label}
+                            </span>
+                          </div>
+                          <span className="font-bold text-red-600">
+                            -{formatPrice(record.amount)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-red-600">
+                          <span className="flex items-center gap-1">
+                            <User className="w-3 h-3" />
+                            {record.operator}
+                          </span>
+                          <span>
+                            {new Date(record.createdAt).toLocaleString('zh-CN', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        <div className="mt-2 pt-2 border-t border-red-100">
+                          <p className="text-xs text-red-700 flex items-center gap-1">
+                            <MessageSquare className="w-3 h-3" />
+                            原因：{record.reason}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-2">
                 <button className="flex-1 flex items-center justify-center gap-2 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors">
                   <Printer className="w-4 h-4" />
                   打印
@@ -428,18 +696,288 @@ export default function Bills() {
                   <Download className="w-4 h-4" />
                   导出
                 </button>
-                {selectedBill.status === 'unpaid' && (
+                {(selectedBill.status === 'unpaid' ||
+                  (selectedBill.status === 'partially_refunded' &&
+                    selectedBill.paidAmount < selectedBill.totalAmount)) && (
                   <button
                     onClick={() => {
-                      handlePay(selectedBill.id);
                       setShowDetail(false);
+                      handleOpenPayModal(selectedBill.id);
                     }}
                     className="flex-1 flex items-center justify-center gap-2 py-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors"
                   >
                     <CheckCircle className="w-4 h-4" />
-                    确认收款
+                    收款
                   </button>
                 )}
+                {(selectedBill.status === 'paid' ||
+                  selectedBill.status === 'partially_refunded') &&
+                  selectedBill.paidAmount > selectedBill.refundedAmount && (
+                    <button
+                      onClick={() => {
+                        setShowDetail(false);
+                        handleOpenRefundModal(selectedBill.id);
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors"
+                    >
+                      <XCircle className="w-4 h-4" />
+                      退款
+                    </button>
+                  )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPayModal && selectedBill && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full">
+            <div className="p-6 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-emerald-500" />
+                  账单收款
+                </h3>
+                <button
+                  onClick={() => setShowPayModal(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="p-4 bg-emerald-50 rounded-xl">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-emerald-700">应付金额</span>
+                  <span className="text-xl font-bold text-emerald-600">
+                    {formatPrice(selectedBill.totalAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-sm text-emerald-700">已付金额</span>
+                  <span className="font-medium text-emerald-600">
+                    {formatPrice(selectedBill.paidAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mt-2 pt-2 border-t border-emerald-200">
+                  <span className="text-sm font-medium text-emerald-800">本次应收</span>
+                  <span className="text-lg font-bold text-emerald-700">
+                    {formatPrice(selectedBill.totalAmount - selectedBill.paidAmount)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">支付方式</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(Object.keys(paymentMethodConfig) as PaymentMethod[]).map((method) => (
+                    <button
+                      key={method}
+                      onClick={() => setPayMethod(method)}
+                      className={`p-3 rounded-xl border-2 transition-colors flex flex-col items-center gap-1 ${
+                        payMethod === method
+                          ? 'border-emerald-500 bg-emerald-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-2xl">{paymentMethodConfig[method].icon}</span>
+                      <span className="text-xs text-slate-600">
+                        {paymentMethodConfig[method].label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">收款金额</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    ¥
+                  </span>
+                  <input
+                    type="number"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    className="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl text-lg font-semibold focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">操作员</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={payOperator}
+                    onChange={(e) => setPayOperator(e.target.value)}
+                    placeholder="请输入操作员姓名"
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">备注（可选）</label>
+                <div className="relative">
+                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                  <textarea
+                    value={payNote}
+                    onChange={(e) => setPayNote(e.target.value)}
+                    placeholder="请输入备注信息"
+                    rows={2}
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowPayModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handlePay}
+                  className="flex-1 py-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors font-medium"
+                >
+                  确认收款
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRefundModal && selectedBill && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full">
+            <div className="p-6 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                  <Wallet className="w-5 h-5 text-red-500" />
+                  账单退款
+                </h3>
+                <button
+                  onClick={() => setShowRefundModal(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="p-4 bg-red-50 rounded-xl">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-red-700">已付金额</span>
+                  <span className="text-xl font-bold text-red-600">
+                    {formatPrice(selectedBill.paidAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mt-2">
+                  <span className="text-sm text-red-700">已退款</span>
+                  <span className="font-medium text-red-600">
+                    {formatPrice(selectedBill.refundedAmount)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center mt-2 pt-2 border-t border-red-200">
+                  <span className="text-sm font-medium text-red-800">可退金额</span>
+                  <span className="text-lg font-bold text-red-700">
+                    {formatPrice(selectedBill.paidAmount - selectedBill.refundedAmount)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">退款方式</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(Object.keys(paymentMethodConfig) as PaymentMethod[]).map((method) => (
+                    <button
+                      key={method}
+                      onClick={() => setRefundMethod(method)}
+                      className={`p-3 rounded-xl border-2 transition-colors flex flex-col items-center gap-1 ${
+                        refundMethod === method
+                          ? 'border-red-500 bg-red-50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-2xl">{paymentMethodConfig[method].icon}</span>
+                      <span className="text-xs text-slate-600">
+                        {paymentMethodConfig[method].label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">退款金额</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                    ¥
+                  </span>
+                  <input
+                    type="number"
+                    value={refundAmount}
+                    onChange={(e) => setRefundAmount(e.target.value)}
+                    className="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl text-lg font-semibold focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
+                    step="0.01"
+                    min="0"
+                    max={selectedBill.paidAmount - selectedBill.refundedAmount}
+                  />
+                </div>
+                <p className="text-xs text-slate-500">退款金额不能超过可退金额</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">退款原因</label>
+                <div className="relative">
+                  <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                  <textarea
+                    value={refundReason}
+                    onChange={(e) => setRefundReason(e.target.value)}
+                    placeholder="请输入退款原因"
+                    rows={2}
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none resize-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">操作员</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={refundOperator}
+                    onChange={(e) => setRefundOperator(e.target.value)}
+                    placeholder="请输入操作员姓名"
+                    className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowRefundModal(false)}
+                  className="flex-1 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleRefund}
+                  className="flex-1 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors font-medium"
+                >
+                  确认退款
+                </button>
               </div>
             </div>
           </div>

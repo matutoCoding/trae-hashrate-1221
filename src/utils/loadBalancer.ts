@@ -1,4 +1,27 @@
-import { Room, Appointment, LoadBalanceInfo, BillingConfig, TransferSuggestion } from '../types';
+import { Room, Appointment, LoadBalanceInfo, BillingConfig, TransferSuggestion, TransferImpactPreview, BatchTransferImpactPreview, TransferItem, Pet } from '../types';
+
+function sortAppointmentsByPriority(a: Appointment, b: Appointment): number {
+  if (a.priorityLevel !== b.priorityLevel) {
+    return b.priorityLevel - a.priorityLevel;
+  }
+  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+}
+
+function getWaitingQueueSorted(roomId: string, appointments: Appointment[]): Appointment[] {
+  return appointments
+    .filter((a) => a.roomId === roomId && a.status === 'waiting')
+    .sort(sortAppointmentsByPriority);
+}
+
+function getAppointmentPosition(
+  appointmentId: string,
+  roomId: string,
+  appointments: Appointment[]
+): number {
+  const sortedQueue = getWaitingQueueSorted(roomId, appointments);
+  const index = sortedQueue.findIndex((a) => a.id === appointmentId);
+  return index === -1 ? -1 : index + 1;
+}
 
 export function calculateLoadBalance(
   rooms: Room[],
@@ -64,16 +87,46 @@ export function estimateWaitTime(
   roomId: string,
   appointments: Appointment[],
   config: BillingConfig,
-  additionalWaitCount: number = 0
+  additionalWaitCount?: number
+): number;
+
+export function estimateWaitTime(
+  roomId: string,
+  appointments: Appointment[],
+  config: BillingConfig,
+  appointmentId?: string
+): number;
+
+export function estimateWaitTime(
+  roomId: string,
+  appointments: Appointment[],
+  config: BillingConfig,
+  param: number | string = 0
 ): number {
-  const waitingList = appointments.filter(
-    (a) => a.roomId === roomId && a.status === 'waiting'
-  );
   const currentPatient = appointments.find(
     (a) => a.roomId === roomId && a.status === 'visiting'
   );
 
-  const count = waitingList.length + additionalWaitCount + (currentPatient ? 0.5 : 0);
+  if (typeof param === 'number') {
+    const waitingList = appointments.filter(
+      (a) => a.roomId === roomId && a.status === 'waiting'
+    );
+    const count = waitingList.length + param + (currentPatient ? 0.5 : 0);
+    return Math.round(count * config.avgVisitMinutes);
+  }
+
+  const appointmentId = param;
+  const sortedQueue = getWaitingQueueSorted(roomId, appointments);
+  const position = sortedQueue.findIndex((a) => a.id === appointmentId);
+
+  if (position === -1) {
+    const waitingList = appointments.filter(
+      (a) => a.roomId === roomId && a.status === 'waiting'
+    );
+    return Math.round((waitingList.length + (currentPatient ? 0.5 : 0)) * config.avgVisitMinutes);
+  }
+
+  const count = position + (currentPatient ? 0.5 : 0);
   return Math.round(count * config.avgVisitMinutes);
 }
 
@@ -83,33 +136,119 @@ export function previewTransferImpact(
   toRoomId: string,
   rooms: Room[],
   appointments: Appointment[],
-  config: BillingConfig
-): {
-  currentWaitMinutes: number;
-  estimatedWaitMinutesAfter: number;
-  improvementMinutes: number;
-  fromRoomWaitAfter: number;
-  toRoomWaitAfter: number;
-  overallBalanceBefore: number;
-  overallBalanceAfter: number;
-} {
+  config: BillingConfig,
+  pets: Pet[]
+): TransferImpactPreview {
   const appointment = appointments.find((a) => a.id === appointmentId);
-  const petName = appointment ? (appointments.find((p) => p.id === appointment.petId)?.id || '') : '';
+  const pet = pets.find((p) => p.id === appointment?.petId);
+  const fromRoom = rooms.find((r) => r.id === fromRoomId);
+  const toRoom = rooms.find((r) => r.id === toRoomId);
 
-  const currentWaitMinutes = estimateWaitTime(fromRoomId, appointments, config);
+  const currentWaitMinutes = estimateWaitTime(fromRoomId, appointments, config, appointmentId);
+  const currentPosition = getAppointmentPosition(appointmentId, fromRoomId, appointments);
 
   const appointmentsAfterTransfer = appointments.map((a) =>
     a.id === appointmentId ? { ...a, roomId: toRoomId } : a
   );
 
-  const toRoomWaitAfter = estimateWaitTime(toRoomId, appointmentsAfterTransfer, config);
-  const fromRoomWaitAfter = estimateWaitTime(fromRoomId, appointmentsAfterTransfer, config);
+  const estimatedWaitMinutesAfter = estimateWaitTime(
+    toRoomId,
+    appointmentsAfterTransfer,
+    config,
+    appointmentId
+  );
+  const estimatedPositionAfter = getAppointmentPosition(
+    appointmentId,
+    toRoomId,
+    appointmentsAfterTransfer
+  );
 
-  const estimatedWaitMinutesAfter = estimateWaitTime(toRoomId, appointmentsAfterTransfer, config);
   const improvementMinutes = currentWaitMinutes - estimatedWaitMinutesAfter;
 
+  return {
+    appointmentId,
+    queueNumber: appointment?.queueNumber || '',
+    petName: pet?.name || '',
+    fromRoomId,
+    fromRoomName: fromRoom?.name || '',
+    toRoomId,
+    toRoomName: toRoom?.name || '',
+    currentWaitMinutes,
+    estimatedWaitMinutesAfter,
+    improvementMinutes,
+    currentPosition,
+    estimatedPositionAfter,
+  };
+}
+
+export function previewBatchTransferImpact(
+  transfers: TransferItem[],
+  rooms: Room[],
+  appointments: Appointment[],
+  config: BillingConfig,
+  pets: Pet[]
+): BatchTransferImpactPreview {
+  const items: TransferImpactPreview[] = [];
+
+  let tempAppointments = [...appointments];
+  for (const transfer of transfers) {
+    tempAppointments = tempAppointments.map((a) =>
+      a.id === transfer.appointmentId ? { ...a, roomId: transfer.toRoomId } : a
+    );
+  }
+
+  for (const transfer of transfers) {
+    const appointment = appointments.find((a) => a.id === transfer.appointmentId);
+    const pet = pets.find((p) => p.id === appointment?.petId);
+    const fromRoom = rooms.find((r) => r.id === transfer.fromRoomId);
+    const toRoom = rooms.find((r) => r.id === transfer.toRoomId);
+
+    const currentWaitMinutes = estimateWaitTime(
+      transfer.fromRoomId,
+      appointments,
+      config,
+      transfer.appointmentId
+    );
+    const currentPosition = getAppointmentPosition(
+      transfer.appointmentId,
+      transfer.fromRoomId,
+      appointments
+    );
+
+    const estimatedWaitMinutesAfter = estimateWaitTime(
+      transfer.toRoomId,
+      tempAppointments,
+      config,
+      transfer.appointmentId
+    );
+    const estimatedPositionAfter = getAppointmentPosition(
+      transfer.appointmentId,
+      transfer.toRoomId,
+      tempAppointments
+    );
+
+    const improvementMinutes = currentWaitMinutes - estimatedWaitMinutesAfter;
+
+    items.push({
+      appointmentId: transfer.appointmentId,
+      queueNumber: appointment?.queueNumber || '',
+      petName: pet?.name || '',
+      fromRoomId: transfer.fromRoomId,
+      fromRoomName: fromRoom?.name || '',
+      toRoomId: transfer.toRoomId,
+      toRoomName: toRoom?.name || '',
+      currentWaitMinutes,
+      estimatedWaitMinutesAfter,
+      improvementMinutes,
+      currentPosition,
+      estimatedPositionAfter,
+    });
+  }
+
+  const totalImprovementMinutes = items.reduce((sum, item) => sum + item.improvementMinutes, 0);
+
   const loadInfosBefore = calculateLoadBalance(rooms, appointments, config);
-  const loadInfosAfter = calculateLoadBalance(rooms, appointmentsAfterTransfer, config);
+  const loadInfosAfter = calculateLoadBalance(rooms, tempAppointments, config);
 
   const avgLoadBefore = loadInfosBefore.reduce((sum, l) => sum + l.loadRate, 0) / loadInfosBefore.length;
   const avgLoadAfter = loadInfosAfter.reduce((sum, l) => sum + l.loadRate, 0) / loadInfosAfter.length;
@@ -120,21 +259,24 @@ export function previewTransferImpact(
   const overallBalanceBefore = Math.sqrt(varianceBefore);
   const overallBalanceAfter = Math.sqrt(varianceAfter);
 
+  const balanceImprovementPercent = overallBalanceBefore > 0
+    ? ((overallBalanceBefore - overallBalanceAfter) / overallBalanceBefore) * 100
+    : 0;
+
   return {
-    currentWaitMinutes,
-    estimatedWaitMinutesAfter,
-    improvementMinutes,
-    fromRoomWaitAfter,
-    toRoomWaitAfter,
+    items,
+    totalImprovementMinutes,
     overallBalanceBefore,
     overallBalanceAfter,
+    balanceImprovementPercent,
   };
 }
 
 export function generateBatchTransferSuggestions(
   rooms: Room[],
   appointments: Appointment[],
-  config: BillingConfig
+  config: BillingConfig,
+  pets: Pet[]
 ): TransferSuggestion[] {
   const suggestions: TransferSuggestion[] = [];
   const loadInfos = calculateLoadBalance(rooms, appointments, config);
@@ -150,9 +292,8 @@ export function generateBatchTransferSuggestions(
 
   if (busyRooms.length > 0 && idleRooms.length > 0) {
     for (const busyRoom of busyRooms) {
-      const waitingAppointments = appointments
-        .filter((a) => a.roomId === busyRoom.roomId && a.status === 'waiting' && a.priorityLevel === 0)
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const waitingAppointments = getWaitingQueueSorted(busyRoom.roomId, appointments)
+        .filter((a) => a.priorityLevel === 0);
 
       const maxTransfer = Math.min(
         Math.ceil(busyRoom.waitingCount * 0.4),
@@ -166,7 +307,7 @@ export function generateBatchTransferSuggestions(
         const targetRoom = idleRooms[i % idleRooms.length];
         const fromRoom = rooms.find((r) => r.id === busyRoom.roomId);
         const toRoom = rooms.find((r) => r.id === targetRoom.roomId);
-        const pet = appointments.find((p) => p.id === appt.petId);
+        const pet = pets.find((p) => p.id === appt.petId);
 
         const impact = previewTransferImpact(
           appt.id,
@@ -174,14 +315,15 @@ export function generateBatchTransferSuggestions(
           targetRoom.roomId,
           rooms,
           appointments,
-          config
+          config,
+          pets
         );
 
         if (impact.improvementMinutes > 0) {
           suggestions.push({
             appointmentId: appt.id,
             queueNumber: appt.queueNumber,
-            petName: pet?.id || '',
+            petName: pet?.name || '',
             fromRoomId: busyRoom.roomId,
             fromRoomName: fromRoom?.name || '',
             toRoomId: targetRoom.roomId,
@@ -201,9 +343,10 @@ export function generateBatchTransferSuggestions(
 export function rebalanceAppointments(
   rooms: Room[],
   appointments: Appointment[],
-  config: BillingConfig
+  config: BillingConfig,
+  pets: Pet[]
 ): { fromRoomId: string; toRoomId: string; appointmentId: string }[] {
-  const suggestions = generateBatchTransferSuggestions(rooms, appointments, config);
+  const suggestions = generateBatchTransferSuggestions(rooms, appointments, config, pets);
   return suggestions.map((s) => ({
     fromRoomId: s.fromRoomId,
     toRoomId: s.toRoomId,
