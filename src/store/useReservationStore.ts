@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Reservation, TriagePriority, triagePriorityConfig, Pet, CheckInStatus } from '../types';
+import { Reservation, TriagePriority, triagePriorityConfig, Pet, CheckInStatus, ReservationPerformanceStats, ReservationTimeSlot } from '../types';
 import { mockReservations, generateId } from '../utils/mock';
 import { useQueueStore } from './useQueueStore';
 import { usePetStore } from './usePetStore';
@@ -22,6 +22,8 @@ interface ReservationState {
   checkInReservation: (reservationId: string) => void;
   cancelReservation: (reservationId: string) => void;
   markNoShow: (reservationId: string) => void;
+  markOverdueReservationsAsNoShow: () => number;
+  getReservationPerformanceStats: () => ReservationPerformanceStats[];
 
   getReservationsByDate: (date: string) => Reservation[];
   getReservationById: (id: string) => Reservation | undefined;
@@ -177,6 +179,116 @@ export const useReservationStore = create<ReservationState>()(
       getTodayReservations: () => {
         const today = new Date().toISOString().split('T')[0];
         return get().getReservationsByDate(today);
+      },
+
+      markOverdueReservationsAsNoShow: () => {
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
+        const currentHour = now.getHours();
+        const currentMinutes = now.getMinutes();
+        const currentTotalMinutes = currentHour * 60 + currentMinutes;
+
+        const todayReservations = get().getReservationsByDate(today);
+        const overdueIds: string[] = [];
+
+        todayReservations.forEach((r) => {
+          if (r.status !== 'scheduled' || r.appointmentId) return;
+
+          let endMinutes: number;
+          switch (r.timeSlot) {
+            case 'morning':
+              endMinutes = 12 * 60;
+              break;
+            case 'afternoon':
+              endMinutes = 18 * 60;
+              break;
+            case 'custom':
+              if (r.endTime) {
+                const [h, m] = r.endTime.split(':').map(Number);
+                endMinutes = h * 60 + m;
+              } else {
+                return;
+              }
+              break;
+            default:
+              return;
+          }
+
+          if (currentTotalMinutes > endMinutes) {
+            overdueIds.push(r.id);
+          }
+        });
+
+        if (overdueIds.length === 0) return 0;
+
+        set((state) => ({
+          reservations: state.reservations.map((r) =>
+            overdueIds.includes(r.id) ? { ...r, status: 'no_show' as const } : r
+          ),
+        }));
+
+        return overdueIds.length;
+      },
+
+      getReservationPerformanceStats: () => {
+        const today = new Date().toISOString().split('T')[0];
+        const todayReservations = get().getReservationsByDate(today);
+        const { appointments } = useQueueStore.getState();
+
+        const timeSlotLabels: Record<ReservationTimeSlot, string> = {
+          morning: '上午',
+          afternoon: '下午',
+          custom: '自定义时段',
+        };
+
+        const stats: Record<ReservationTimeSlot, ReservationPerformanceStats> = {
+          morning: {
+            timeSlot: 'morning',
+            timeSlotLabel: timeSlotLabels.morning,
+            total: 0,
+            pending: 0,
+            checkedIn: 0,
+            late: 0,
+            noShow: 0,
+          },
+          afternoon: {
+            timeSlot: 'afternoon',
+            timeSlotLabel: timeSlotLabels.afternoon,
+            total: 0,
+            pending: 0,
+            checkedIn: 0,
+            late: 0,
+            noShow: 0,
+          },
+          custom: {
+            timeSlot: 'custom',
+            timeSlotLabel: timeSlotLabels.custom,
+            total: 0,
+            pending: 0,
+            checkedIn: 0,
+            late: 0,
+            noShow: 0,
+          },
+        };
+
+        todayReservations.forEach((r) => {
+          const slot = r.timeSlot;
+          stats[slot].total++;
+
+          if (r.status === 'scheduled') {
+            stats[slot].pending++;
+          } else if (r.status === 'checked_in') {
+            stats[slot].checkedIn++;
+            const relatedAppt = r.appointmentId ? appointments.find((a) => a.id === r.appointmentId) : undefined;
+            if (relatedAppt?.checkInStatus === 'late') {
+              stats[slot].late++;
+            }
+          } else if (r.status === 'no_show') {
+            stats[slot].noShow++;
+          }
+        });
+
+        return [stats.morning, stats.afternoon, stats.custom];
       },
     }),
     {

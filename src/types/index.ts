@@ -124,6 +124,8 @@ export interface PaymentRecord {
   createdAt: string;
 }
 
+export type RefundType = 'custom' | 'item';
+
 export interface RefundRecord {
   id: string;
   billId: string;
@@ -131,7 +133,47 @@ export interface RefundRecord {
   method: PaymentMethod;
   operator: string;
   reason: string;
+  refundType: RefundType;
+  itemId?: string;
+  itemName?: string;
   createdAt: string;
+}
+
+export type FinancialTransactionType = 'payment' | 'refund';
+
+export interface FinancialTransaction {
+  id: string;
+  petId: string;
+  type: FinancialTransactionType;
+  amount: number;
+  method: PaymentMethod;
+  operator: string;
+  billId: string;
+  appointmentId?: string;
+  recordId?: string;
+  itemName?: string;
+  reason?: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface ReservationPerformanceStats {
+  timeSlot: 'morning' | 'afternoon' | 'custom';
+  timeSlotLabel: string;
+  total: number;
+  pending: number;
+  checkedIn: number;
+  late: number;
+  noShow: number;
+}
+
+export interface BillItemRefundInfo {
+  itemId: string;
+  itemName: string;
+  originalSubtotal: number;
+  refundedAmount: number;
+  remainingAmount: number;
+  refundableAmount: number;
 }
 
 export type BillStatus = 'unpaid' | 'paid' | 'partially_refunded' | 'refunded';
@@ -205,6 +247,8 @@ export interface TransferImpactPreview {
   improvementMinutes: number;
   currentPosition: number;
   estimatedPositionAfter: number;
+  sortReason: string;
+  currentSortReason: string;
 }
 
 export interface BatchTransferImpactPreview {

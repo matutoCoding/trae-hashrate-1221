@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Plus, Search, Clock, Phone, User, PawPrint, AlertTriangle, RefreshCw, Circle, Calendar, MapPin, Check, X } from 'lucide-react';
+import { Plus, Search, Clock, Phone, User, PawPrint, AlertTriangle, RefreshCw, Circle, Calendar, MapPin, Check, X, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { usePetStore } from '../store/usePetStore';
 import { useQueueStore } from '../store/useQueueStore';
 import { useRoomStore } from '../store/useRoomStore';
 import { useReservationStore } from '../store/useReservationStore';
 import StatusBadge from '../components/StatusBadge';
 import PriorityBadge from '../components/PriorityBadge';
-import { PetSpecies, TriagePriority, triagePriorityConfig, ReservationTimeSlot, ReservationStatus, CheckInStatus, checkInStatusConfig, Appointment, Reservation } from '../types';
+import { PetSpecies, TriagePriority, triagePriorityConfig, ReservationTimeSlot, ReservationStatus, CheckInStatus, checkInStatusConfig, Appointment, Reservation, ReservationPerformanceStats } from '../types';
 import { cn } from '../lib/utils';
 
 type TabType = 'walkin' | 'reservation';
@@ -15,7 +15,19 @@ export default function Queue() {
   const { pets, addPet, searchPets, getPetById } = usePetStore();
   const { createAppointment, getWaitingQueue, appointments } = useQueueStore();
   const { getRoomById, rooms } = useRoomStore();
-  const { createReservation, getTodayReservations, checkInReservation, cancelReservation } = useReservationStore();
+  const {
+    createReservation,
+    getTodayReservations,
+    checkInReservation,
+    cancelReservation,
+    markOverdueReservationsAsNoShow,
+    getReservationPerformanceStats,
+    markNoShow,
+  } = useReservationStore();
+
+  const [expandedSlots, setExpandedSlots] = useState<Set<ReservationTimeSlot>>(
+    new Set(['morning', 'afternoon', 'custom'])
+  );
 
   const [activeTab, setActiveTab] = useState<TabType>('walkin');
   const [showForm, setShowForm] = useState(false);
@@ -50,6 +62,51 @@ export default function Queue() {
   const waitingQueue = getWaitingQueue();
   const todayReservations = getTodayReservations();
   const displayPets = searchKeyword ? searchPets(searchKeyword) : pets;
+  const performanceStats = getReservationPerformanceStats();
+
+  const toggleSlotExpansion = (slot: ReservationTimeSlot) => {
+    setExpandedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(slot)) {
+        next.delete(slot);
+      } else {
+        next.add(slot);
+      }
+      return next;
+    });
+  };
+
+  const handleCleanupOverdue = () => {
+    if (confirm('确认将所有已过时未到店的预约标记为未到？')) {
+      const count = markOverdueReservationsAsNoShow();
+      if (count > 0) {
+        alert(`成功标记 ${count} 笔过时预约为未到`);
+      } else {
+        alert('没有需要清理的过时预约');
+      }
+    }
+  };
+
+  const handleMarkNoShow = (reservationId: string) => {
+    if (confirm('确认标记该预约为未到？')) {
+      markNoShow(reservationId);
+    }
+  };
+
+  const getReservationsBySlot = (slot: ReservationTimeSlot) => {
+    return todayReservations.filter((r) => r.timeSlot === slot);
+  };
+
+  const getAppointmentInfo = (appointmentId?: string) => {
+    if (!appointmentId) return null;
+    const appt = appointments.find((a) => a.id === appointmentId);
+    if (!appt) return null;
+    const room = getRoomById(appt.roomId);
+    return {
+      queueNumber: appt.queueNumber,
+      roomName: room?.name || '未分配',
+    };
+  };
 
   const handleCreatePet = () => {
     if (!formData.name || !formData.ownerName || !formData.ownerPhone) return;
@@ -807,133 +864,235 @@ export default function Queue() {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-purple-500" />
-              今日预约
-              <span className="ml-2 px-2.5 py-0.5 bg-purple-100 text-purple-600 text-sm rounded-full">
-                {todayReservations.filter(r => r.status === 'scheduled').length} 位待就诊
-              </span>
-            </h2>
-
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                      预约号
-                    </th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                      患宠
-                    </th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                      分诊
-                    </th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                      时段
-                    </th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                      状态
-                    </th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
-                      操作
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {todayReservations.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
-                        <Calendar className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                        <p>今日暂无预约</p>
-                      </td>
-                    </tr>
-                  ) : (
-                    todayReservations.map((res) => {
-                      const statusConfig = getReservationStatusConfig(res.status);
-                      const relatedAppt = res.appointmentId ? appointments.find(a => a.id === res.appointmentId) : undefined;
-
-                      return (
-                        <tr
-                          key={res.id}
-                          className="border-b border-slate-50 hover:bg-slate-50 transition-colors"
-                        >
-                          <td className="py-3 px-4 font-mono font-medium text-slate-800">
-                            {res.id.slice(0, 8)}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              <div>
-                                <p className="font-medium text-slate-800">
-                                  {res.petName}
-                                </p>
-                                <p className="text-xs text-slate-500 flex items-center gap-1">
-                                  <Phone className="w-3 h-3" />
-                                  {res.ownerPhone}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <PriorityBadge priority={res.priority} />
-                          </td>
-                          <td className="py-3 px-4">
-                            {getTimeSlotBadge(res.timeSlot, res.startTime, res.endTime)}
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex flex-col gap-1">
-                              <span
-                                className={cn(
-                                  'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium w-fit',
-                                  statusConfig.className
-                                )}
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5 opacity-60"></span>
-                                {statusConfig.label}
-                              </span>
-                              {res.status === 'checked_in' && relatedAppt && (
-                                <span className="text-xs text-slate-500 font-mono">
-                                  排队号：{relatedAppt.queueNumber}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2">
-                              {res.status === 'scheduled' && (
-                                <>
-                                  <button
-                                    onClick={() => handleCheckIn(res.id)}
-                                    className="px-3 py-1 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors"
-                                  >
-                                    到店
-                                  </button>
-                                  <button
-                                    onClick={() => handleCancelReservation(res.id)}
-                                    className="px-3 py-1 text-xs bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
-                                  >
-                                    取消
-                                  </button>
-                                </>
-                              )}
-                              {res.status === 'checked_in' && (
-                                <span className="text-xs text-emerald-600">
-                                  已转排队
-                                </span>
-                              )}
-                              {(res.status === 'cancelled' || res.status === 'no_show') && (
-                                <span className="text-xs text-slate-400">
-                                  -
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-purple-500" />
+                今日预约
+                <span className="ml-2 px-2.5 py-0.5 bg-purple-100 text-purple-600 text-sm rounded-full">
+                  {todayReservations.filter(r => r.status === 'scheduled').length} 位待就诊
+                </span>
+              </h2>
+              <button
+                onClick={handleCleanupOverdue}
+                className="flex items-center gap-1.5 px-4 py-2 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors text-sm font-medium border border-red-200"
+              >
+                <Trash2 className="w-4 h-4" />
+                一键清理过时预约
+              </button>
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              {performanceStats.map((stat) => (
+                <div
+                  key={stat.timeSlot}
+                  onClick={() => toggleSlotExpansion(stat.timeSlot)}
+                  className="border border-slate-200 rounded-xl p-4 cursor-pointer hover:border-purple-300 hover:shadow-md transition-all"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-slate-800">{stat.timeSlotLabel}</h3>
+                    <div className="flex items-center gap-1 text-slate-400">
+                      {expandedSlots.has(stat.timeSlot) ? (
+                        <ChevronUp className="w-4 h-4" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-2xl font-bold text-slate-800">{stat.total}</span>
+                    <span className="text-sm text-slate-500">预约总数</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                      <span className="text-slate-600">待到店</span>
+                      <span className="ml-auto font-semibold text-amber-600">{stat.pending}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      <span className="text-slate-600">已到店</span>
+                      <span className="ml-auto font-semibold text-emerald-600">{stat.checkedIn}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                      <span className="text-slate-600">迟到</span>
+                      <span className="ml-auto font-semibold text-red-600">{stat.late}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                      <span className="text-slate-600">未到</span>
+                      <span className="ml-auto font-semibold text-slate-500">{stat.noShow}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {performanceStats.map((stat) => (
+              <div key={stat.timeSlot} className="mb-6 last:mb-0">
+                {expandedSlots.has(stat.timeSlot) && (
+                  <div>
+                    <h3 className="text-sm font-medium text-slate-600 mb-3 px-2">
+                      {stat.timeSlotLabel}时段预约列表
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-slate-100 bg-slate-50">
+                            <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
+                              预约号
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
+                              患宠
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
+                              分诊
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
+                              时段
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
+                              排队号/诊室
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
+                              状态
+                            </th>
+                            <th className="text-left py-3 px-4 text-sm font-medium text-slate-500">
+                              操作
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {getReservationsBySlot(stat.timeSlot).length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-8 text-center text-slate-400">
+                                <p>该时段暂无预约</p>
+                              </td>
+                            </tr>
+                          ) : (
+                            getReservationsBySlot(stat.timeSlot).map((res) => {
+                              const statusConfig = getReservationStatusConfig(res.status);
+                              const apptInfo = getAppointmentInfo(res.appointmentId);
+                              const relatedAppt = res.appointmentId ? appointments.find(a => a.id === res.appointmentId) : undefined;
+                              const isLate = relatedAppt?.checkInStatus === 'late';
+                              const isNoShow = res.status === 'no_show';
+
+                              return (
+                                <tr
+                                  key={res.id}
+                                  className={cn(
+                                    'border-b border-slate-50 hover:bg-slate-50 transition-colors',
+                                    isLate && 'bg-red-50 hover:bg-red-50',
+                                    isNoShow && 'bg-slate-50'
+                                  )}
+                                >
+                                  <td className={cn(
+                                    'py-3 px-4 font-mono font-medium',
+                                    isNoShow ? 'text-slate-400 line-through' : 'text-slate-800'
+                                  )}>
+                                    {res.id.slice(0, 8)}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-2">
+                                      <div>
+                                        <p className={cn(
+                                          'font-medium',
+                                          isNoShow ? 'text-slate-400 line-through' : 'text-slate-800'
+                                        )}>
+                                          {res.petName}
+                                        </p>
+                                        <p className="text-xs text-slate-500 flex items-center gap-1">
+                                          <Phone className="w-3 h-3" />
+                                          {res.ownerPhone}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <PriorityBadge priority={res.priority} />
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    {getTimeSlotBadge(res.timeSlot, res.startTime, res.endTime)}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    {apptInfo ? (
+                                      <div className="flex flex-col gap-1">
+                                        <span className="text-sm font-mono font-medium text-slate-700">
+                                          {apptInfo.queueNumber}
+                                        </span>
+                                        <span className="text-xs text-slate-500">
+                                          {apptInfo.roomName}
+                                        </span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs text-slate-400">-</span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <div className="flex flex-col gap-1">
+                                      <span
+                                        className={cn(
+                                          'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium w-fit',
+                                          statusConfig.className
+                                        )}
+                                      >
+                                        <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5 opacity-60"></span>
+                                        {statusConfig.label}
+                                      </span>
+                                      {isLate && (
+                                        <span className="text-xs text-red-500 font-medium">
+                                          已迟到
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-2">
+                                      {res.status === 'scheduled' && (
+                                        <>
+                                          <button
+                                            onClick={() => handleCheckIn(res.id)}
+                                            className="px-3 py-1 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors"
+                                          >
+                                            到店
+                                          </button>
+                                          <button
+                                            onClick={() => handleMarkNoShow(res.id)}
+                                            className="px-3 py-1 text-xs bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+                                          >
+                                            标记未到
+                                          </button>
+                                          <button
+                                            onClick={() => handleCancelReservation(res.id)}
+                                            className="px-3 py-1 text-xs bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+                                          >
+                                            取消
+                                          </button>
+                                        </>
+                                      )}
+                                      {res.status === 'checked_in' && (
+                                        <span className="text-xs text-emerald-600">
+                                          已转排队
+                                        </span>
+                                      )}
+                                      {(res.status === 'cancelled' || res.status === 'no_show') && (
+                                        <span className="text-xs text-slate-400">
+                                          -
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>

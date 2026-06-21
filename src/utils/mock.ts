@@ -257,6 +257,7 @@ const mockRefundRecords: RefundRecord[] = [
     method: 'wechat',
     operator: '前台小李',
     reason: '项目调整',
+    refundType: 'custom',
     createdAt: '2024-06-20T09:00:00Z',
   },
 ];

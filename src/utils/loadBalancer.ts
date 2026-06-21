@@ -1,10 +1,43 @@
-import { Room, Appointment, LoadBalanceInfo, BillingConfig, TransferSuggestion, TransferImpactPreview, BatchTransferImpactPreview, TransferItem, Pet } from '../types';
+import { Room, Appointment, LoadBalanceInfo, BillingConfig, TransferSuggestion, TransferImpactPreview, BatchTransferImpactPreview, TransferItem, Pet, triagePriorityConfig } from '../types';
 
 function sortAppointmentsByPriority(a: Appointment, b: Appointment): number {
   if (a.priorityLevel !== b.priorityLevel) {
     return b.priorityLevel - a.priorityLevel;
   }
+  if (a.source !== b.source) {
+    return a.source === 'reservation' ? -1 : 1;
+  }
   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+}
+
+export function getSortReason(a: Appointment, b: Appointment): string {
+  if (a.priorityLevel !== b.priorityLevel) {
+    const priorityLabel = triagePriorityConfig[a.priority]?.label || '普通';
+    return `${priorityLabel}优先`;
+  }
+  if (a.source !== b.source) {
+    return a.source === 'reservation' ? '预约号优先' : '现场号靠后';
+  }
+  return '取号较早';
+}
+
+function getAppointmentSortReason(appointment: Appointment, sortedQueue: Appointment[]): string {
+  const index = sortedQueue.findIndex((a) => a.id === appointment.id);
+  if (index <= 0) return '队列首位';
+  
+  const prevAppointment = sortedQueue[index - 1];
+  const nextAppointment = sortedQueue[index + 1];
+  
+  if (nextAppointment) {
+    return getSortReason(appointment, nextAppointment);
+  }
+  if (prevAppointment) {
+    const reason = getSortReason(prevAppointment, appointment);
+    if (reason === '取号较早') return '取号较晚';
+    return reason;
+  }
+  
+  return '正常排队';
 }
 
 function getWaitingQueueSorted(roomId: string, appointments: Appointment[]): Appointment[] {
@@ -165,6 +198,12 @@ export function previewTransferImpact(
 
   const improvementMinutes = currentWaitMinutes - estimatedWaitMinutesAfter;
 
+  const currentSortedQueue = getWaitingQueueSorted(fromRoomId, appointments);
+  const targetSortedQueue = getWaitingQueueSorted(toRoomId, appointmentsAfterTransfer);
+  
+  const currentSortReason = appointment ? getAppointmentSortReason(appointment, currentSortedQueue) : '';
+  const sortReason = appointment ? getAppointmentSortReason(appointment, targetSortedQueue) : '';
+
   return {
     appointmentId,
     queueNumber: appointment?.queueNumber || '',
@@ -178,6 +217,8 @@ export function previewTransferImpact(
     improvementMinutes,
     currentPosition,
     estimatedPositionAfter,
+    sortReason,
+    currentSortReason,
   };
 }
 
@@ -239,6 +280,12 @@ export function previewBatchTransferImpact(
 
     const improvementMinutes = currentWaitMinutes - estimatedWaitMinutesAfter;
 
+    const currentSortedQueue = getWaitingQueueSorted(transfer.fromRoomId, appointments);
+    const targetSortedQueue = getWaitingQueueSorted(transfer.toRoomId, tempAppointments);
+    
+    const currentSortReason = appointment ? getAppointmentSortReason(appointment, currentSortedQueue) : '';
+    const sortReason = appointment ? getAppointmentSortReason(appointment, targetSortedQueue) : '';
+
     items.push({
       appointmentId: transfer.appointmentId,
       queueNumber: appointment?.queueNumber || '',
@@ -252,6 +299,8 @@ export function previewBatchTransferImpact(
       improvementMinutes,
       currentPosition,
       estimatedPositionAfter,
+      sortReason,
+      currentSortReason,
     });
   }
 

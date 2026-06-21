@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { FileText, Search, Calendar, Stethoscope, ClipboardList, Plus, Receipt, ArrowRight, Link2, TrendingUp, Wallet, RefreshCw } from 'lucide-react';
+import { FileText, Search, Calendar, Stethoscope, ClipboardList, Plus, Receipt, ArrowRight, Link2, TrendingUp, Wallet, RefreshCw, History, Undo2 } from 'lucide-react';
 import { usePetStore } from '../store/usePetStore';
 import { useMedicalRecordStore } from '../store/useMedicalRecordStore';
 import { useBillingStore } from '../store/useBillingStore';
 import { formatPrice, formatDateTime } from '../utils/billing';
-import { paymentMethodConfig } from '../types';
+import { paymentMethodConfig, FinancialTransaction } from '../types';
 
 export default function MedicalRecords() {
   const { pets, getPetById, searchPets } = usePetStore();
@@ -24,11 +24,12 @@ export default function MedicalRecords() {
   const selectedPet = selectedPetId ? getPetById(selectedPetId) : null;
   const petRecords = selectedPetId ? getRecordsByPetId(selectedPetId) : [];
   const petBills = selectedPetId ? getBillsByPetId(selectedPetId) : [];
-  const { getPaymentRecordsByBillId, getRefundRecordsByBillId } = useBillingStore();
+  const { getPaymentRecordsByBillId, getRefundRecordsByBillId, getFinancialTransactionsByPetId } = useBillingStore();
 
   const totalSpent = petBills.reduce((sum, bill) => sum + bill.paidAmount, 0);
   const totalRefunded = petBills.reduce((sum, bill) => sum + bill.refundedAmount, 0);
   const netSpent = totalSpent - totalRefunded;
+  const financialTransactions = selectedPetId ? getFinancialTransactionsByPetId(selectedPetId) : [];
 
   const handleAddRecord = () => {
     if (!selectedPetId || !formData.diagnosis) return;
@@ -188,6 +189,124 @@ export default function MedicalRecords() {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-sm p-6">
+                <h2 className="text-lg font-semibold text-slate-800 mb-5 flex items-center gap-2">
+                  <History className="w-5 h-5 text-blue-500" />
+                  财务流水时间线
+                </h2>
+
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  <div className="bg-emerald-50 rounded-xl p-4 text-center">
+                    <p className="text-xs text-emerald-600 mb-1">累计收款</p>
+                    <p className="text-xl font-bold text-emerald-600">+{formatPrice(totalSpent)}</p>
+                  </div>
+                  <div className="bg-red-50 rounded-xl p-4 text-center">
+                    <p className="text-xs text-red-500 mb-1">累计退款</p>
+                    <p className="text-xl font-bold text-red-500">-{formatPrice(totalRefunded)}</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-4 text-center">
+                    <p className="text-xs text-blue-600 mb-1">实际花费</p>
+                    <p className="text-xl font-bold text-blue-600">{formatPrice(netSpent)}</p>
+                  </div>
+                </div>
+
+                {financialTransactions.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400">
+                    <Receipt className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>暂无财务流水记录</p>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="absolute left-5 top-2 bottom-2 w-0.5 bg-slate-200"></div>
+                    <div className="space-y-4">
+                      {financialTransactions.map((transaction, index) => {
+                        const isLast = index === financialTransactions.length - 1;
+                        return (
+                          <div key={transaction.id} className="relative pl-14">
+                            <div
+                              className={`absolute left-2 top-2 w-6 h-6 rounded-full border-4 border-white shadow flex items-center justify-center ${
+                                transaction.type === 'payment'
+                                  ? 'bg-emerald-500'
+                                  : 'bg-red-500'
+                              }`}
+                            >
+                              {transaction.type === 'payment' ? (
+                                <span className="text-white text-xs font-bold">￥</span>
+                              ) : (
+                                <Undo2 className="w-2.5 h-2.5 text-white" />
+                              )}
+                            </div>
+                            <div className="bg-slate-50 rounded-xl p-4 hover:bg-slate-100 transition-colors">
+                              <div className="flex items-start justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`text-sm font-medium ${
+                                      transaction.type === 'payment'
+                                        ? 'text-emerald-600'
+                                        : 'text-red-500'
+                                    }`}
+                                  >
+                                    {transaction.type === 'payment' ? '收款' : '退款'}
+                                  </span>
+                                  <span
+                                    className={`text-lg font-bold ${
+                                      transaction.type === 'payment'
+                                        ? 'text-emerald-600'
+                                        : 'text-red-500'
+                                    }`}
+                                  >
+                                    {transaction.type === 'payment' ? '+' : '-'}
+                                    {formatPrice(transaction.amount)}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 text-sm text-slate-600">
+                                  <span>{paymentMethodConfig[transaction.method].icon}</span>
+                                  <span>{paymentMethodConfig[transaction.method].label}</span>
+                                  <span className="text-slate-400">·</span>
+                                  <span className="text-slate-400">账单：</span>
+                                  <span
+                                    className="font-mono text-blue-500 hover:text-blue-600 cursor-pointer hover:underline"
+                                    onClick={() => {
+                                      const billElement = document.querySelector(
+                                        `[data-bill-id="${transaction.billId}"]`
+                                      );
+                                      if (billElement) {
+                                        billElement.scrollIntoView({
+                                          behavior: 'smooth',
+                                          block: 'center',
+                                        });
+                                      }
+                                    }}
+                                  >
+                                    {transaction.billId}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-slate-500">
+                                  <span>经办人：{transaction.operator}</span>
+                                  <span className="text-slate-400">·</span>
+                                  <span>{formatDateTime(transaction.createdAt)}</span>
+                                </div>
+                                {transaction.type === 'refund' && (
+                                  <div className="flex items-center gap-2 text-sm text-orange-600 mt-2 pt-2 border-t border-slate-200">
+                                    <span className="font-medium">
+                                      {transaction.itemName
+                                        ? `退款项目：${transaction.itemName}`
+                                        : `退款原因：${transaction.reason}`}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {showAddForm && (

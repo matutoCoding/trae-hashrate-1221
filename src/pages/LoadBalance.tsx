@@ -244,34 +244,59 @@ export default function LoadBalance() {
           </div>
 
           {previewMode && selectedTransfers.size > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              <div className="bg-white rounded-xl p-4">
-                <div className="text-sm text-slate-500 mb-1">调剂数量</div>
-                <div className="text-2xl font-bold text-slate-800">
-                  {selectedTransfers.size} 位
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div className="bg-white rounded-xl p-4">
+                  <div className="text-sm text-slate-500 mb-1">调剂数量</div>
+                  <div className="text-2xl font-bold text-slate-800">
+                    {selectedTransfers.size} 位
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl p-4">
+                  <div className="text-sm text-slate-500 mb-1">总等待改善</div>
+                  <div className="text-2xl font-bold text-emerald-600 flex items-center gap-1">
+                    <TrendingDown className="w-5 h-5" />
+                    {totalImprovement} 分钟
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl p-4">
+                  <div className="text-sm text-slate-500 mb-1">均衡度改善</div>
+                  <div className="text-2xl font-bold text-blue-600">
+                    {((overallBalanceBefore - overallBalanceAfter) / overallBalanceBefore * 100).toFixed(1)}%
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl p-4">
+                  <div className="text-sm text-slate-500 mb-1">涉及诊室</div>
+                  <div className="text-2xl font-bold text-purple-600">
+                    {new Set(batchSuggestions.filter(s => selectedTransfers.has(s.appointmentId)).map(s => s.fromRoomId)).size +
+                     new Set(batchSuggestions.filter(s => selectedTransfers.has(s.appointmentId)).map(s => s.toRoomId)).size} 间
+                  </div>
                 </div>
               </div>
-              <div className="bg-white rounded-xl p-4">
-                <div className="text-sm text-slate-500 mb-1">总等待改善</div>
-                <div className="text-2xl font-bold text-emerald-600 flex items-center gap-1">
-                  <TrendingDown className="w-5 h-5" />
-                  {totalImprovement} 分钟
+
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <div className="font-medium text-blue-800 mb-1">排序规则说明</div>
+                    <div className="text-sm text-blue-700 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">优先级：</span>
+                        <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">急诊</span>
+                        <span className="text-slate-400">&gt;</span>
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">复诊</span>
+                        <span className="text-slate-400">&gt;</span>
+                        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-xs">普通</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">同级排序：</span>
+                        <span>优先预约号，再按取号时间排序</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="bg-white rounded-xl p-4">
-                <div className="text-sm text-slate-500 mb-1">均衡度改善</div>
-                <div className="text-2xl font-bold text-blue-600">
-                  {((overallBalanceBefore - overallBalanceAfter) / overallBalanceBefore * 100).toFixed(1)}%
-                </div>
-              </div>
-              <div className="bg-white rounded-xl p-4">
-                <div className="text-sm text-slate-500 mb-1">涉及诊室</div>
-                <div className="text-2xl font-bold text-purple-600">
-                  {new Set(batchSuggestions.filter(s => selectedTransfers.has(s.appointmentId)).map(s => s.fromRoomId)).size +
-                   new Set(batchSuggestions.filter(s => selectedTransfers.has(s.appointmentId)).map(s => s.toRoomId)).size} 间
-                </div>
-              </div>
-            </div>
+            </>
           )}
 
           <div className="space-y-2 max-h-80 overflow-y-auto mb-4">
@@ -322,44 +347,68 @@ export default function LoadBalance() {
                   </div>
                   <div className="flex items-center gap-4">
                     {previewMode && (
-                      <div className="flex items-center gap-2 text-sm">
+                      <div className="flex flex-col gap-2">
                         {(() => {
                           const previewItem = batchPreview?.items.find(
                             (item) => item.appointmentId === suggestion.appointmentId
                           );
                           if (previewItem) {
+                            const isPositionWorse = previewItem.estimatedPositionAfter > previewItem.currentPosition;
                             return (
                               <>
-                                <span className="text-slate-500">
-                                  <Clock className="w-4 h-4 inline mr-1" />
-                                  {previewItem.currentWaitMinutes} 分钟（第{previewItem.currentPosition}位）
-                                </span>
-                                <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
-                                <span className="text-emerald-600 font-medium">
-                                  {previewItem.estimatedWaitMinutesAfter} 分钟（第{previewItem.estimatedPositionAfter}位）
-                                </span>
-                                <span className={`text-xs px-2 py-1 rounded-full ${
-                                  previewItem.improvementMinutes >= 0
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-red-100 text-red-700'
-                                }`}>
-                                  {previewItem.improvementMinutes >= 0 ? (
-                                    <>
-                                      <TrendingDown className="w-3 h-3 inline mr-1" />
-                                      -{previewItem.improvementMinutes} 分钟
-                                    </>
-                                  ) : (
-                                    <>
-                                      <TrendingUp className="w-3 h-3 inline mr-1" />
-                                      +{Math.abs(previewItem.improvementMinutes)} 分钟
-                                    </>
+                                <div className="flex items-center gap-2 text-sm">
+                                  <span className="text-slate-500">
+                                    <Clock className="w-4 h-4 inline mr-1" />
+                                    {previewItem.currentWaitMinutes} 分钟
+                                  </span>
+                                  <span className="text-slate-600 font-mono">
+                                    （第{previewItem.currentPosition}位）
+                                  </span>
+                                  <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
+                                  <span className={`font-medium ${isPositionWorse ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                    {previewItem.estimatedWaitMinutesAfter} 分钟
+                                  </span>
+                                  <span className={`font-mono ${isPositionWorse ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                    （第{previewItem.estimatedPositionAfter}位）
+                                  </span>
+                                  <span className={`text-xs px-2 py-1 rounded-full ${
+                                    previewItem.improvementMinutes >= 0
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-red-100 text-red-700'
+                                  }`}>
+                                    {previewItem.improvementMinutes >= 0 ? (
+                                      <>
+                                        <TrendingDown className="w-3 h-3 inline mr-1" />
+                                        -{previewItem.improvementMinutes} 分钟
+                                      </>
+                                    ) : (
+                                      <>
+                                        <TrendingUp className="w-3 h-3 inline mr-1" />
+                                        +{Math.abs(previewItem.improvementMinutes)} 分钟
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 text-xs">
+                                  <span className="text-slate-400">
+                                    当前：{previewItem.currentSortReason}
+                                  </span>
+                                  <span className="text-slate-300">|</span>
+                                  <span className="text-slate-400">
+                                    调剂后：{previewItem.sortReason}
+                                  </span>
+                                  {isPositionWorse && (
+                                    <span className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
+                                      <AlertCircle className="w-3 h-3" />
+                                      位置靠后
+                                    </span>
                                   )}
-                                </span>
+                                </div>
                               </>
                             );
                           }
                           return (
-                            <>
+                            <div className="flex items-center gap-2 text-sm">
                               <span className="text-slate-500">
                                 <Clock className="w-4 h-4 inline mr-1" />
                                 {suggestion.currentWaitMinutes} 分钟
@@ -372,7 +421,7 @@ export default function LoadBalance() {
                                 <TrendingDown className="w-3 h-3 inline mr-1" />
                                 -{suggestion.improvementMinutes} 分钟
                               </span>
-                            </>
+                            </div>
                           );
                         })()}
                       </div>
@@ -644,13 +693,35 @@ export default function LoadBalance() {
                       billingConfig,
                       pets
                     );
+                    const isPositionWorse = impact.estimatedPositionAfter > impact.currentPosition;
                     return (
-                      <div className="space-y-1">
-                        <p>当前等待：{impact.currentWaitMinutes} 分钟（第{impact.currentPosition}位）</p>
-                        <p>预计等待：{impact.estimatedWaitMinutesAfter} 分钟（第{impact.estimatedPositionAfter}位）</p>
-                        <p className="text-emerald-600 font-medium">
-                          改善：{impact.improvementMinutes} 分钟
-                        </p>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <span>当前等待：{impact.currentWaitMinutes} 分钟</span>
+                          <span className="font-mono">（第{impact.currentPosition}位）</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span>预计等待：{impact.estimatedWaitMinutesAfter} 分钟</span>
+                          <span className={`font-mono ${isPositionWorse ? 'text-amber-600' : ''}`}>
+                            （第{impact.estimatedPositionAfter}位）
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-600 font-medium">
+                            改善：{impact.improvementMinutes} 分钟
+                          </span>
+                          {isPositionWorse && (
+                            <span className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded text-xs">
+                              <AlertCircle className="w-3 h-3" />
+                              位置靠后
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-blue-500 pt-1 border-t border-blue-200">
+                          <span>当前排序：{impact.currentSortReason}</span>
+                          <span className="mx-2">|</span>
+                          <span>调剂后排序：{impact.sortReason}</span>
+                        </div>
                       </div>
                     );
                   })()}

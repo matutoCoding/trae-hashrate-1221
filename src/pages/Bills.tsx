@@ -28,7 +28,7 @@ import { usePetStore } from '../store/usePetStore';
 import { useMedicalRecordStore } from '../store/useMedicalRecordStore';
 import StatusBadge from '../components/StatusBadge';
 import { formatPrice, formatDateTime } from '../utils/billing';
-import { BillStatus, PaymentMethod, paymentMethodConfig } from '../types';
+import { BillStatus, PaymentMethod, paymentMethodConfig, RefundType, BillItemRefundInfo } from '../types';
 
 export default function Bills() {
   const {
@@ -38,6 +38,8 @@ export default function Bills() {
     getBillById,
     getPaymentRecordsByBillId,
     getRefundRecordsByBillId,
+    getBillItemsRefundInfo,
+    getItemRefundInfo,
   } = useBillingStore();
   const { getPetById } = usePetStore();
   const { getRecordByBillId } = useMedicalRecordStore();
@@ -58,6 +60,9 @@ export default function Bills() {
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [refundOperator, setRefundOperator] = useState('');
+  const [refundType, setRefundType] = useState<RefundType>('custom');
+  const [selectedRefundItems, setSelectedRefundItems] = useState<Map<string, number>>(new Map());
+  const [itemsRefundInfo, setItemsRefundInfo] = useState<BillItemRefundInfo[]>([]);
 
   const filteredBills = bills
     .filter((bill) => {
@@ -116,23 +121,29 @@ export default function Bills() {
     setRefundMethod('cash');
     setRefundReason('');
     setRefundOperator('');
+    setRefundType('custom');
+    setSelectedRefundItems(new Map());
+    setItemsRefundInfo(getBillItemsRefundInfo(billId));
     setShowRefundModal(true);
+  };
+
+  const calculateItemRefundAmount = () => {
+    let total = 0;
+    selectedRefundItems.forEach((qty, itemId) => {
+      const item = itemsRefundInfo.find((i) => i.itemId === itemId);
+      const billItem = selectedBill?.items.find((bi) => bi.id === itemId);
+      if (item && billItem && qty > 0) {
+        total += billItem.unitPrice * qty;
+      }
+    });
+    return total;
   };
 
   const handleRefund = () => {
     if (!selectedBillId) return;
     const bill = getBillById(selectedBillId);
     if (!bill) return;
-    const amount = parseFloat(refundAmount);
-    const refundableAmount = bill.paidAmount - bill.refundedAmount;
-    if (isNaN(amount) || amount <= 0) {
-      alert('请输入有效金额');
-      return;
-    }
-    if (amount > refundableAmount) {
-      alert(`退款金额不能超过可退余额：¥${refundableAmount.toFixed(2)}`);
-      return;
-    }
+
     if (!refundOperator.trim()) {
       alert('请输入操作员姓名');
       return;
@@ -141,8 +152,48 @@ export default function Bills() {
       alert('请输入退款原因');
       return;
     }
+
     try {
-      refundBill(selectedBillId, amount, refundMethod, refundOperator.trim(), refundReason.trim());
+      if (refundType === 'item') {
+        if (selectedRefundItems.size === 0) {
+          alert('请选择要退款的项目');
+          return;
+        }
+
+        selectedRefundItems.forEach((qty, itemId) => {
+          const item = itemsRefundInfo.find((i) => i.itemId === itemId);
+          const billItem = bill.items.find((bi) => bi.id === itemId);
+          if (!item || !billItem || qty <= 0) return;
+
+          const itemRefundInfo = getItemRefundInfo(selectedBillId, itemId);
+          const maxRefundQty = Math.floor(itemRefundInfo.remainingAmount / billItem.unitPrice);
+          if (qty > maxRefundQty) {
+            alert(`项目「${billItem.itemName}」最多可退 ${maxRefundQty} 份`);
+            throw new Error('退款数量超过可退数量');
+          }
+
+          const amount = billItem.unitPrice * qty;
+          refundBill(selectedBillId, amount, refundMethod, refundOperator.trim(), refundReason.trim(), {
+            refundType: 'item',
+            itemId,
+            itemName: billItem.itemName,
+          });
+        });
+      } else {
+        const amount = parseFloat(refundAmount);
+        const refundableAmount = bill.paidAmount - bill.refundedAmount;
+        if (isNaN(amount) || amount <= 0) {
+          alert('请输入有效金额');
+          return;
+        }
+        if (amount > refundableAmount) {
+          alert(`退款金额不能超过可退余额：¥${refundableAmount.toFixed(2)}`);
+          return;
+        }
+        refundBill(selectedBillId, amount, refundMethod, refundOperator.trim(), refundReason.trim(), {
+          refundType: 'custom',
+        });
+      }
       setShowRefundModal(false);
     } catch (error) {
       alert((error as Error).message);
@@ -659,7 +710,16 @@ export default function Bills() {
                               <span className="font-medium text-red-800 text-sm">
                                 {paymentMethodConfig[record.method].label}
                               </span>
+                              <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 text-red-700">
+                                {record.refundType === 'item' ? '项目退款' : '自定义退款'}
+                              </span>
                             </div>
+                            {record.refundType === 'item' && record.itemName && (
+                              <div className="flex items-center gap-1 text-xs text-red-600 mt-1">
+                                <FileText className="w-3 h-3" />
+                                <span>项目：{record.itemName}</span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2 text-xs text-red-600 mt-1">
                               <span className="flex items-center gap-1">
                                 <User className="w-3 h-3" />
@@ -913,26 +973,167 @@ export default function Bills() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">退款金额</label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                    ¥
-                  </span>
-                  <input
-                    type="number"
-                    value={refundAmount}
-                    onChange={(e) => setRefundAmount(e.target.value)}
-                    className="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl text-lg font-semibold focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
-                    step="0.01"
-                    min="0"
-                    max={selectedBill.paidAmount - selectedBill.refundedAmount}
-                  />
+                <label className="text-sm font-medium text-slate-700">退款类型</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setRefundType('custom')}
+                    className={`p-3 rounded-xl border-2 transition-colors flex items-center justify-center gap-2 ${
+                      refundType === 'custom'
+                        ? 'border-red-500 bg-red-50'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <Minus className="w-4 h-4" />
+                    <span className="text-sm font-medium">自定义金额</span>
+                  </button>
+                  <button
+                    onClick={() => setRefundType('item')}
+                    className={`p-3 rounded-xl border-2 transition-colors flex items-center justify-center gap-2 ${
+                      refundType === 'item'
+                        ? 'border-red-500 bg-red-50'
+                        : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span className="text-sm font-medium">按项目退款</span>
+                  </button>
                 </div>
-                <p className="text-xs text-slate-500">退款金额不能超过可退金额</p>
               </div>
 
+              {refundType === 'custom' ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">退款金额</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                      ¥
+                    </span>
+                    <input
+                      type="number"
+                      value={refundAmount}
+                      onChange={(e) => setRefundAmount(e.target.value)}
+                      className="w-full pl-8 pr-4 py-3 border border-slate-200 rounded-xl text-lg font-semibold focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
+                      step="0.01"
+                      min="0"
+                      max={selectedBill.paidAmount - selectedBill.refundedAmount}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-500">退款金额不能超过可退金额</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-slate-700">选择退款项目</label>
+                    <span className="text-sm font-semibold text-red-600">
+                      预计退款：{formatPrice(calculateItemRefundAmount())}
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-64 overflow-y-auto border border-slate-200 rounded-xl p-2">
+                    {itemsRefundInfo.map((itemInfo) => {
+                      const billItem = selectedBill.items.find((bi) => bi.id === itemInfo.itemId);
+                      if (!billItem) return null;
+                      const isSelected = selectedRefundItems.has(itemInfo.itemId);
+                      const refundQty = selectedRefundItems.get(itemInfo.itemId) || 0;
+                      const maxRefundQty = Math.floor(itemInfo.remainingAmount / billItem.unitPrice);
+
+                      return (
+                        <div
+                          key={itemInfo.itemId}
+                          className={`p-3 rounded-lg border transition-colors ${
+                            isSelected
+                              ? 'border-red-300 bg-red-50'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                const newSelected = new Map(selectedRefundItems);
+                                if (e.target.checked) {
+                                  newSelected.set(itemInfo.itemId, Math.min(1, maxRefundQty));
+                                } else {
+                                  newSelected.delete(itemInfo.itemId);
+                                }
+                                setSelectedRefundItems(newSelected);
+                              }}
+                              className="mt-1 w-4 h-4 text-red-600 rounded focus:ring-red-500"
+                              disabled={itemInfo.refundableAmount <= 0}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <p className="font-medium text-slate-800 text-sm truncate">
+                                  {billItem.itemName}
+                                </p>
+                                {itemInfo.refundableAmount <= 0 && (
+                                  <span className="text-xs text-slate-400">已全额退款</span>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 mt-1 text-xs text-slate-500">
+                                <div>
+                                  <span className="text-slate-400">数量：</span>
+                                  <span className="font-medium text-slate-700">{billItem.quantity}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400">单价：</span>
+                                  <span className="font-medium text-slate-700">
+                                    {formatPrice(billItem.unitPrice)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400">原价：</span>
+                                  <span className="font-medium text-slate-700">
+                                    {formatPrice(billItem.subtotal)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400">已退：</span>
+                                  <span className="font-medium text-red-600">
+                                    {formatPrice(itemInfo.refundedAmount)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-400">可退：</span>
+                                  <span className="font-medium text-emerald-600">
+                                    {formatPrice(itemInfo.refundableAmount)}
+                                  </span>
+                                </div>
+                              </div>
+                              {isSelected && maxRefundQty > 0 && (
+                                <div className="flex items-center gap-2 mt-2">
+                                  <label className="text-xs text-slate-500">退款数量：</label>
+                                  <input
+                                    type="number"
+                                    value={refundQty}
+                                    onChange={(e) => {
+                                      const value = parseInt(e.target.value) || 0;
+                                      const clampedValue = Math.max(1, Math.min(value, maxRefundQty));
+                                      const newSelected = new Map(selectedRefundItems);
+                                      newSelected.set(itemInfo.itemId, clampedValue);
+                                      setSelectedRefundItems(newSelected);
+                                    }}
+                                    className="w-20 px-2 py-1 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none"
+                                    min="1"
+                                    max={maxRefundQty}
+                                  />
+                                  <span className="text-xs text-slate-400">
+                                    (最多 {maxRefundQty} 份)
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">退款原因</label>
+                <label className="text-sm font-medium text-slate-700">
+                  退款原因 <span className="text-red-500">*</span>
+                </label>
                 <div className="relative">
                   <MessageSquare className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                   <textarea
