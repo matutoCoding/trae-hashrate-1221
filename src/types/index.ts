@@ -32,6 +32,14 @@ export interface Room {
 
 export type AppointmentSource = 'walkin' | 'reservation';
 
+export type CheckInStatus = 'early' | 'on_time' | 'late';
+
+export const checkInStatusConfig: Record<CheckInStatus, { label: string; color: string }> = {
+  early: { label: '提前到', color: 'blue' },
+  on_time: { label: '准点', color: 'green' },
+  late: { label: '迟到', color: 'red' },
+};
+
 export type AppointmentStatus = 'waiting' | 'called' | 'visiting' | 'completed' | 'cancelled';
 
 export interface Appointment {
@@ -44,6 +52,10 @@ export interface Appointment {
   priorityLevel: number;
   source: AppointmentSource;
   reservationId?: string;
+  reservationTimeSlot?: ReservationTimeSlot;
+  reservationStartTime?: string;
+  reservationEndTime?: string;
+  checkInStatus?: CheckInStatus;
   createdAt: string;
   calledAt?: string;
   completedAt?: string;

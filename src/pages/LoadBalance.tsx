@@ -5,6 +5,7 @@ import {
   Clock,
   Users,
   TrendingUp,
+  TrendingDown,
   AlertCircle,
   RefreshCw,
   MoveRight,
@@ -12,7 +13,6 @@ import {
   X,
   Play,
   Zap,
-  TrendingDown,
   LayoutDashboard,
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -315,26 +315,66 @@ export default function LoadBalance() {
                         {suggestion.queueNumber}
                       </span>
                       <span className="text-slate-500">{pet?.name}</span>
-                      {appt?.priorityLevel! > 0 && (
-                        <PriorityBadge priority={appt?.priority as TriagePriority} />
+                      {appt && appt.priorityLevel > 0 && (
+                        <PriorityBadge priority={appt.priority as TriagePriority} />
                       )}
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
                     {previewMode && (
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="text-slate-500">
-                          <Clock className="w-4 h-4 inline mr-1" />
-                          {suggestion.currentWaitMinutes} 分钟
-                        </span>
-                        <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
-                        <span className="text-emerald-600 font-medium">
-                          {suggestion.estimatedWaitMinutesAfter} 分钟
-                        </span>
-                        <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">
-                          <TrendingDown className="w-3 h-3 inline mr-1" />
-                          -{suggestion.improvementMinutes} 分钟
-                        </span>
+                        {(() => {
+                          const previewItem = batchPreview?.items.find(
+                            (item) => item.appointmentId === suggestion.appointmentId
+                          );
+                          if (previewItem) {
+                            return (
+                              <>
+                                <span className="text-slate-500">
+                                  <Clock className="w-4 h-4 inline mr-1" />
+                                  {previewItem.currentWaitMinutes} 分钟（第{previewItem.currentPosition}位）
+                                </span>
+                                <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
+                                <span className="text-emerald-600 font-medium">
+                                  {previewItem.estimatedWaitMinutesAfter} 分钟（第{previewItem.estimatedPositionAfter}位）
+                                </span>
+                                <span className={`text-xs px-2 py-1 rounded-full ${
+                                  previewItem.improvementMinutes >= 0
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {previewItem.improvementMinutes >= 0 ? (
+                                    <>
+                                      <TrendingDown className="w-3 h-3 inline mr-1" />
+                                      -{previewItem.improvementMinutes} 分钟
+                                    </>
+                                  ) : (
+                                    <>
+                                      <TrendingUp className="w-3 h-3 inline mr-1" />
+                                      +{Math.abs(previewItem.improvementMinutes)} 分钟
+                                    </>
+                                  )}
+                                </span>
+                              </>
+                            );
+                          }
+                          return (
+                            <>
+                              <span className="text-slate-500">
+                                <Clock className="w-4 h-4 inline mr-1" />
+                                {suggestion.currentWaitMinutes} 分钟
+                              </span>
+                              <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
+                              <span className="text-emerald-600 font-medium">
+                                {suggestion.estimatedWaitMinutesAfter} 分钟
+                              </span>
+                              <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">
+                                <TrendingDown className="w-3 h-3 inline mr-1" />
+                                -{suggestion.improvementMinutes} 分钟
+                              </span>
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                     <button

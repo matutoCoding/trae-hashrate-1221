@@ -3,7 +3,7 @@ import { FileText, Search, Calendar, Stethoscope, ClipboardList, Plus, Receipt, 
 import { usePetStore } from '../store/usePetStore';
 import { useMedicalRecordStore } from '../store/useMedicalRecordStore';
 import { useBillingStore } from '../store/useBillingStore';
-import { formatPrice } from '../utils/billing';
+import { formatPrice, formatDateTime } from '../utils/billing';
 import { paymentMethodConfig } from '../types';
 
 export default function MedicalRecords() {
@@ -374,12 +374,17 @@ export default function MedicalRecords() {
                                           <div className="pt-2 border-t border-slate-200">
                                             <p className="text-xs text-slate-500 mb-2">支付记录</p>
                                             {payments.map((p) => (
-                                              <div key={p.id} className="flex items-center justify-between text-xs py-1">
-                                                <div className="flex items-center gap-1">
-                                                  <span>{paymentMethodConfig[p.method].icon}</span>
-                                                  <span className="text-slate-600">{paymentMethodConfig[p.method].label}</span>
-                                                  <span className="text-slate-400">·</span>
-                                                  <span className="text-slate-400">{p.operator}</span>
+                                              <div key={p.id} className="flex items-center justify-between text-xs py-1.5">
+                                                <div className="flex flex-col">
+                                                  <div className="flex items-center gap-1">
+                                                    <span>{paymentMethodConfig[p.method].icon}</span>
+                                                    <span className="text-slate-600 font-medium">{paymentMethodConfig[p.method].label}</span>
+                                                  </div>
+                                                  <div className="flex items-center gap-2 text-slate-400 mt-0.5">
+                                                    <span>{p.operator}</span>
+                                                    <span>·</span>
+                                                    <span>{formatDateTime(p.createdAt)}</span>
+                                                  </div>
                                                 </div>
                                                 <span className="font-medium text-emerald-600">+{formatPrice(p.amount)}</span>
                                               </div>
@@ -390,10 +395,19 @@ export default function MedicalRecords() {
                                           <div className="pt-2 border-t border-slate-200">
                                             <p className="text-xs text-slate-500 mb-2">退款记录</p>
                                             {refunds.map((r) => (
-                                              <div key={r.id} className="flex items-center justify-between text-xs py-1">
-                                                <div className="flex items-center gap-1">
-                                                  <span>{paymentMethodConfig[r.method].icon}</span>
-                                                  <span className="text-slate-600">{r.reason}</span>
+                                              <div key={r.id} className="flex items-center justify-between text-xs py-1.5">
+                                                <div className="flex flex-col">
+                                                  <div className="flex items-center gap-1">
+                                                    <span>{paymentMethodConfig[r.method].icon}</span>
+                                                    <span className="text-slate-600 font-medium">{paymentMethodConfig[r.method].label}</span>
+                                                  </div>
+                                                  <div className="flex items-center gap-2 text-slate-400 mt-0.5">
+                                                    <span>{r.operator}</span>
+                                                    <span>·</span>
+                                                    <span>{r.reason}</span>
+                                                    <span>·</span>
+                                                    <span>{formatDateTime(r.createdAt)}</span>
+                                                  </div>
                                                 </div>
                                                 <span className="font-medium text-red-500">-{formatPrice(r.amount)}</span>
                                               </div>

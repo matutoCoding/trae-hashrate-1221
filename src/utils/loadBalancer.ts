@@ -190,6 +190,10 @@ export function previewBatchTransferImpact(
 ): BatchTransferImpactPreview {
   const items: TransferImpactPreview[] = [];
 
+  // 批量调剂计算逻辑：
+  // 1. 第一步：一次性将所有调剂应用到临时数组中
+  //    这样 tempAppointments 包含了所有调剂后的完整状态
+  //    确保后续计算每只患宠位置时，其他已调剂的患宠也在目标队列中参与排序
   let tempAppointments = [...appointments];
   for (const transfer of transfers) {
     tempAppointments = tempAppointments.map((a) =>
@@ -197,12 +201,16 @@ export function previewBatchTransferImpact(
     );
   }
 
+  // 2. 第二步：基于包含所有调剂的 tempAppointments，逐个计算每只患宠的影响
+  //    关键：使用 tempAppointments 计算时，所有同时调剂的患宠都已在目标队列中
+  //    这样它们会互相影响排序，得到准确的最终位置和等待时间
   for (const transfer of transfers) {
     const appointment = appointments.find((a) => a.id === transfer.appointmentId);
     const pet = pets.find((p) => p.id === appointment?.petId);
     const fromRoom = rooms.find((r) => r.id === transfer.fromRoomId);
     const toRoom = rooms.find((r) => r.id === transfer.toRoomId);
 
+    // 当前状态：基于原始 appointments 计算
     const currentWaitMinutes = estimateWaitTime(
       transfer.fromRoomId,
       appointments,
@@ -215,6 +223,8 @@ export function previewBatchTransferImpact(
       appointments
     );
 
+    // 调剂后状态：基于已应用所有调剂的 tempAppointments 计算
+    // 此时其他同时调剂的患宠也已在目标队列中参与排序
     const estimatedWaitMinutesAfter = estimateWaitTime(
       transfer.toRoomId,
       tempAppointments,

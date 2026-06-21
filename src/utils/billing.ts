@@ -100,6 +100,15 @@ export function formatPrice(price: number): string {
   return `¥${price.toFixed(2)}`;
 }
 
+export function formatDateTime(date: string | Date): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${month}-${day} ${hours}:${minutes}`;
+}
+
 export function getPriceTier(price: number, config: BillingConfig): 'base' | 'normal' | 'ceiling' {
   if (price <= config.basePrice) return 'base';
   if (price >= config.ceilingPrice) return 'ceiling';

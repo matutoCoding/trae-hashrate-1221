@@ -6,7 +6,7 @@ import { useRoomStore } from '../store/useRoomStore';
 import { useReservationStore } from '../store/useReservationStore';
 import StatusBadge from '../components/StatusBadge';
 import PriorityBadge from '../components/PriorityBadge';
-import { PetSpecies, TriagePriority, triagePriorityConfig, ReservationTimeSlot, ReservationStatus } from '../types';
+import { PetSpecies, TriagePriority, triagePriorityConfig, ReservationTimeSlot, ReservationStatus, CheckInStatus, checkInStatusConfig, Appointment, Reservation } from '../types';
 import { cn } from '../lib/utils';
 
 type TabType = 'walkin' | 'reservation';
@@ -181,6 +181,45 @@ export default function Queue() {
         现场
       </span>
     );
+  };
+
+  const getTimeSlotBadge = (timeSlot?: ReservationTimeSlot, startTime?: string, endTime?: string) => {
+    if (!timeSlot) return null;
+    const text = getTimeSlotText(timeSlot, startTime, endTime);
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-600 border border-indigo-200">
+        <Clock className="w-3 h-3 mr-1" />
+        {text}
+      </span>
+    );
+  };
+
+  const getCheckInStatusBadge = (checkInStatus?: CheckInStatus) => {
+    if (!checkInStatus) return null;
+    const config = checkInStatusConfig[checkInStatus];
+    const colorClasses: Record<CheckInStatus, string> = {
+      early: 'bg-blue-50 text-blue-600 border-blue-200',
+      on_time: 'bg-emerald-50 text-emerald-600 border-emerald-200',
+      late: 'bg-red-50 text-red-600 border-red-200',
+    };
+    return (
+      <span className={cn(
+        'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border',
+        colorClasses[checkInStatus]
+      )}>
+        {config.label}
+      </span>
+    );
+  };
+
+  const getCheckInStatusColor = (checkInStatus?: CheckInStatus) => {
+    if (!checkInStatus) return 'text-slate-400';
+    const colorClasses: Record<CheckInStatus, string> = {
+      early: 'text-blue-500',
+      on_time: 'text-emerald-500',
+      late: 'text-red-500',
+    };
+    return colorClasses[checkInStatus];
   };
 
   return (
@@ -624,7 +663,7 @@ export default function Queue() {
 
         <div className="lg:col-span-2 space-y-6">
           <div className="bg-white rounded-2xl shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-800 mb-2 flex items-center gap-2">
               <Clock className="w-5 h-5 text-amber-500" />
               排队队列
               <span className="ml-2 px-2.5 py-0.5 bg-slate-100 text-slate-600 text-sm rounded-full">
@@ -642,6 +681,13 @@ export default function Queue() {
                 </span>
               </div>
             </h2>
+
+            <div className="mb-4 px-4 py-2 bg-slate-50 rounded-lg border border-slate-100">
+              <p className="text-xs text-slate-500">
+                <span className="font-medium text-slate-600">排序规则：</span>
+                急诊 &gt; 复诊 &gt; 普通，同级优先预约号，再按取号时间
+              </p>
+            </div>
 
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -713,7 +759,11 @@ export default function Queue() {
                             {getSourceBadge(appt.source)}
                           </td>
                           <td className="py-3 px-4">
-                            <PriorityBadge priority={appt.priority} showReason={appt.priorityLevel > 0} />
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <PriorityBadge priority={appt.priority} showReason={appt.priorityLevel > 0} />
+                              {appt.source === 'reservation' && getTimeSlotBadge(appt.reservationTimeSlot, appt.reservationStartTime, appt.reservationEndTime)}
+                              {getCheckInStatusBadge(appt.checkInStatus)}
+                            </div>
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">
@@ -800,6 +850,7 @@ export default function Queue() {
                   ) : (
                     todayReservations.map((res) => {
                       const statusConfig = getReservationStatusConfig(res.status);
+                      const relatedAppt = res.appointmentId ? appointments.find(a => a.id === res.appointmentId) : undefined;
 
                       return (
                         <tr
@@ -825,19 +876,26 @@ export default function Queue() {
                           <td className="py-3 px-4">
                             <PriorityBadge priority={res.priority} />
                           </td>
-                          <td className="py-3 px-4 text-sm text-slate-600">
-                            {getTimeSlotText(res.timeSlot, res.startTime, res.endTime)}
+                          <td className="py-3 px-4">
+                            {getTimeSlotBadge(res.timeSlot, res.startTime, res.endTime)}
                           </td>
                           <td className="py-3 px-4">
-                            <span
-                              className={cn(
-                                'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                                statusConfig.className
+                            <div className="flex flex-col gap-1">
+                              <span
+                                className={cn(
+                                  'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium w-fit',
+                                  statusConfig.className
+                                )}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5 opacity-60"></span>
+                                {statusConfig.label}
+                              </span>
+                              {res.status === 'checked_in' && relatedAppt && (
+                                <span className="text-xs text-slate-500 font-mono">
+                                  排队号：{relatedAppt.queueNumber}
+                                </span>
                               )}
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5 opacity-60"></span>
-                              {statusConfig.label}
-                            </span>
+                            </div>
                           </td>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-2">

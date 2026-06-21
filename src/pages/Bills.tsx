@@ -27,7 +27,7 @@ import { useBillingStore } from '../store/useBillingStore';
 import { usePetStore } from '../store/usePetStore';
 import { useMedicalRecordStore } from '../store/useMedicalRecordStore';
 import StatusBadge from '../components/StatusBadge';
-import { formatPrice } from '../utils/billing';
+import { formatPrice, formatDateTime } from '../utils/billing';
 import { BillStatus, PaymentMethod, paymentMethodConfig } from '../types';
 
 export default function Bills() {
@@ -111,7 +111,8 @@ export default function Bills() {
     const bill = getBillById(billId);
     if (!bill) return;
     setSelectedBillId(billId);
-    setRefundAmount(bill.paidAmount.toFixed(2));
+    const refundableAmount = bill.paidAmount - bill.refundedAmount;
+    setRefundAmount(refundableAmount.toFixed(2));
     setRefundMethod('cash');
     setRefundReason('');
     setRefundOperator('');
@@ -123,12 +124,13 @@ export default function Bills() {
     const bill = getBillById(selectedBillId);
     if (!bill) return;
     const amount = parseFloat(refundAmount);
+    const refundableAmount = bill.paidAmount - bill.refundedAmount;
     if (isNaN(amount) || amount <= 0) {
       alert('请输入有效金额');
       return;
     }
-    if (amount > bill.paidAmount) {
-      alert('退款金额不能超过已付金额');
+    if (amount > refundableAmount) {
+      alert(`退款金额不能超过可退余额：¥${refundableAmount.toFixed(2)}`);
       return;
     }
     if (!refundOperator.trim()) {
@@ -139,8 +141,12 @@ export default function Bills() {
       alert('请输入退款原因');
       return;
     }
-    refundBill(selectedBillId, amount, refundMethod, refundOperator.trim(), refundReason.trim());
-    setShowRefundModal(false);
+    try {
+      refundBill(selectedBillId, amount, refundMethod, refundOperator.trim(), refundReason.trim());
+      setShowRefundModal(false);
+    } catch (error) {
+      alert((error as Error).message);
+    }
   };
 
   const getPrimaryPaymentMethod = (billId: string) => {
@@ -595,31 +601,27 @@ export default function Bills() {
                         key={record.id}
                         className="p-3 bg-emerald-50 rounded-xl border border-emerald-100"
                       >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">
-                              {paymentMethodConfig[record.method].icon}
-                            </span>
-                            <span className="font-medium text-emerald-800 text-sm">
-                              {paymentMethodConfig[record.method].label}
-                            </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">
+                                {paymentMethodConfig[record.method].icon}
+                              </span>
+                              <span className="font-medium text-emerald-800 text-sm">
+                                {paymentMethodConfig[record.method].label}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-emerald-600 mt-1">
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {record.operator}
+                              </span>
+                              <span>·</span>
+                              <span>{formatDateTime(record.createdAt)}</span>
+                            </div>
                           </div>
                           <span className="font-bold text-emerald-600">
                             +{formatPrice(record.amount)}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-emerald-600">
-                          <span className="flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {record.operator}
-                          </span>
-                          <span>
-                            {new Date(record.createdAt).toLocaleString('zh-CN', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
                           </span>
                         </div>
                         {record.note && (
@@ -648,38 +650,30 @@ export default function Bills() {
                         key={record.id}
                         className="p-3 bg-red-50 rounded-xl border border-red-100"
                       >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">
-                              {paymentMethodConfig[record.method].icon}
-                            </span>
-                            <span className="font-medium text-red-800 text-sm">
-                              {paymentMethodConfig[record.method].label}
-                            </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">
+                                {paymentMethodConfig[record.method].icon}
+                              </span>
+                              <span className="font-medium text-red-800 text-sm">
+                                {paymentMethodConfig[record.method].label}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-red-600 mt-1">
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {record.operator}
+                              </span>
+                              <span>·</span>
+                              <span>{record.reason}</span>
+                              <span>·</span>
+                              <span>{formatDateTime(record.createdAt)}</span>
+                            </div>
                           </div>
                           <span className="font-bold text-red-600">
                             -{formatPrice(record.amount)}
                           </span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-red-600">
-                          <span className="flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {record.operator}
-                          </span>
-                          <span>
-                            {new Date(record.createdAt).toLocaleString('zh-CN', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        </div>
-                        <div className="mt-2 pt-2 border-t border-red-100">
-                          <p className="text-xs text-red-700 flex items-center gap-1">
-                            <MessageSquare className="w-3 h-3" />
-                            原因：{record.reason}
-                          </p>
                         </div>
                       </div>
                     ))}

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Appointment, Pet, TriagePriority, triagePriorityConfig, BillItem, AppointmentSource } from '../types';
+import { Appointment, Pet, TriagePriority, triagePriorityConfig, BillItem, AppointmentSource, ReservationTimeSlot, CheckInStatus } from '../types';
 import { mockAppointments, generateId, generateQueueNumber } from '../utils/mock';
 import { useRoomStore } from './useRoomStore';
 import { useSettingsStore } from './useSettingsStore';
@@ -21,7 +21,16 @@ interface QueueState {
   appointments: Appointment[];
   currentQueueNumber: number;
 
-  createAppointment: (pet: Pet, priority?: TriagePriority, source?: AppointmentSource, reservationId?: string) => Appointment;
+  createAppointment: (
+    pet: Pet,
+    priority?: TriagePriority,
+    source?: AppointmentSource,
+    reservationId?: string,
+    reservationTimeSlot?: ReservationTimeSlot,
+    reservationStartTime?: string,
+    reservationEndTime?: string,
+    checkInStatus?: CheckInStatus
+  ) => Appointment;
   callNext: (roomId: string) => Appointment | null;
   startVisit: (appointmentId: string) => void;
   completeAppointment: (appointmentId: string) => void;
@@ -49,6 +58,9 @@ function sortAppointments(a: Appointment, b: Appointment): number {
   if (a.priorityLevel !== b.priorityLevel) {
     return b.priorityLevel - a.priorityLevel;
   }
+  if (a.source !== b.source) {
+    return a.source === 'reservation' ? -1 : 1;
+  }
   return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
 }
 
@@ -58,7 +70,7 @@ export const useQueueStore = create<QueueState>()(
       appointments: mockAppointments,
       currentQueueNumber: 5,
 
-      createAppointment: (pet, priority = 'normal', source = 'walkin', reservationId) => {
+      createAppointment: (pet, priority = 'normal', source = 'walkin', reservationId, reservationTimeSlot, reservationStartTime, reservationEndTime, checkInStatus) => {
         const { rooms } = useRoomStore.getState();
         const { billingConfig } = useSettingsStore.getState();
 
@@ -79,7 +91,11 @@ export const useQueueStore = create<QueueState>()(
           priority,
           priorityLevel: priorityConfig.level,
           source,
-          reservationId: source === 'reservation' ? reservationId : undefined,
+          reservationId,
+          reservationTimeSlot,
+          reservationStartTime,
+          reservationEndTime,
+          checkInStatus,
           createdAt: new Date().toISOString(),
         };
 

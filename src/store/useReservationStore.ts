@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Reservation, TriagePriority, triagePriorityConfig, Pet } from '../types';
+import { Reservation, TriagePriority, triagePriorityConfig, Pet, CheckInStatus } from '../types';
 import { mockReservations, generateId } from '../utils/mock';
 import { useQueueStore } from './useQueueStore';
 import { usePetStore } from './usePetStore';
@@ -27,6 +27,50 @@ interface ReservationState {
   getReservationById: (id: string) => Reservation | undefined;
   getReservationsByPetId: (petId: string) => Reservation[];
   getTodayReservations: () => Reservation[];
+}
+
+function calculateCheckInStatus(reservation: Reservation): CheckInStatus {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinutes = now.getMinutes();
+  const currentTotalMinutes = currentHour * 60 + currentMinutes;
+
+  let scheduledStart: number;
+  let scheduledEnd: number;
+
+  switch (reservation.timeSlot) {
+    case 'morning':
+      scheduledStart = 8 * 60;
+      scheduledEnd = 12 * 60;
+      break;
+    case 'afternoon':
+      scheduledStart = 14 * 60;
+      scheduledEnd = 18 * 60;
+      break;
+    case 'custom':
+      if (reservation.startTime && reservation.endTime) {
+        const [startH, startM] = reservation.startTime.split(':').map(Number);
+        const [endH, endM] = reservation.endTime.split(':').map(Number);
+        scheduledStart = startH * 60 + startM;
+        scheduledEnd = endH * 60 + endM;
+      } else {
+        return 'on_time';
+      }
+      break;
+    default:
+      return 'on_time';
+  }
+
+  const earlyThreshold = scheduledStart - 30;
+  const lateThreshold = scheduledStart + 15;
+
+  if (currentTotalMinutes < earlyThreshold) {
+    return 'early';
+  } else if (currentTotalMinutes > lateThreshold) {
+    return 'late';
+  } else {
+    return 'on_time';
+  }
 }
 
 export const useReservationStore = create<ReservationState>()(
@@ -79,11 +123,17 @@ export const useReservationStore = create<ReservationState>()(
           throw new Error('找不到宠物信息');
         }
 
+        const checkInStatus = calculateCheckInStatus(reservation);
+
         const appointment = useQueueStore.getState().createAppointment(
           pet,
           reservation.priority,
           'reservation',
-          reservationId
+          reservationId,
+          reservation.timeSlot,
+          reservation.startTime,
+          reservation.endTime,
+          checkInStatus
         );
 
         const now = new Date().toISOString();

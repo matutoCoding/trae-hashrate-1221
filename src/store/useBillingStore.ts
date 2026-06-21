@@ -16,6 +16,7 @@ interface BillingState {
   refundBill: (billId: string, amount: number, method: PaymentMethod, operator: string, reason: string) => RefundRecord;
   getPaymentRecordsByBillId: (billId: string) => PaymentRecord[];
   getRefundRecordsByBillId: (billId: string) => RefundRecord[];
+  getRefundableAmount: (billId: string) => number;
 
   calculatePreliminaryBill: (items: Omit<BillItem, 'id' | 'subtotal'>[]) => ReturnType<typeof calculateBill>;
 }
@@ -104,6 +105,22 @@ export const useBillingStore = create<BillingState>()(
       },
 
       refundBill: (billId, amount, method, operator, reason) => {
+        const bill = get().bills.find((b) => b.id === billId);
+        if (!bill) {
+          throw new Error('找不到账单');
+        }
+
+        const refundableAmount = bill.paidAmount - bill.refundedAmount;
+        if (amount <= 0) {
+          throw new Error('退款金额必须大于0');
+        }
+        if (amount > refundableAmount) {
+          throw new Error(`退款金额不能超过可退余额：¥${refundableAmount.toFixed(2)}`);
+        }
+        if (bill.paidAmount <= 0) {
+          throw new Error('该账单尚未收款，无法退款');
+        }
+
         const refundRecord: RefundRecord = {
           id: generateId('refund'),
           billId,
@@ -137,6 +154,12 @@ export const useBillingStore = create<BillingState>()(
         }));
 
         return refundRecord;
+      },
+
+      getRefundableAmount: (billId: string) => {
+        const bill = get().bills.find((b) => b.id === billId);
+        if (!bill) return 0;
+        return bill.paidAmount - bill.refundedAmount;
       },
 
       getPaymentRecordsByBillId: (billId) => {
