@@ -12,9 +12,13 @@ import {
   Download,
   Printer,
   Clock,
+  Link2,
+  Stethoscope,
+  ArrowRight,
 } from 'lucide-react';
 import { useBillingStore } from '../store/useBillingStore';
 import { usePetStore } from '../store/usePetStore';
+import { useMedicalRecordStore } from '../store/useMedicalRecordStore';
 import StatusBadge from '../components/StatusBadge';
 import { formatPrice } from '../utils/billing';
 import { BillStatus } from '../types';
@@ -22,6 +26,7 @@ import { BillStatus } from '../types';
 export default function Bills() {
   const { bills, payBill, refundBill, getBillById } = useBillingStore();
   const { getPetById } = usePetStore();
+  const { getRecordByBillId } = useMedicalRecordStore();
 
   const [searchKeyword, setSearchKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<BillStatus | 'all'>('all');
@@ -311,6 +316,49 @@ export default function Bills() {
                 </div>
                 <StatusBadge status={selectedBill.status} type="bill" />
               </div>
+
+              {(() => {
+                const record = getRecordByBillId(selectedBill.id);
+                if (!record) return null;
+
+                return (
+                  <div className="space-y-2 p-4 bg-blue-50 rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Link2 className="w-4 h-4 text-blue-500" />
+                        <p className="text-sm font-medium text-blue-800">关联病历</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          alert(`病历详情：\n诊断：${record.diagnosis}\n治疗：${record.treatment || '无'}\n备注：${record.notes || '无'}`);
+                        }}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                      >
+                        查看病历
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-start gap-2">
+                        <Stethoscope className="w-4 h-4 text-blue-500 mt-0.5" />
+                        <div>
+                          <p className="text-xs text-blue-600">诊断</p>
+                          <p className="text-sm text-blue-800 font-medium">{record.diagnosis}</p>
+                        </div>
+                      </div>
+                      {record.treatment && (
+                        <div className="flex items-start gap-2">
+                          <FileText className="w-4 h-4 text-blue-500 mt-0.5" />
+                          <div>
+                            <p className="text-xs text-blue-600">治疗方案</p>
+                            <p className="text-sm text-blue-700">{record.treatment}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="space-y-2">
                 <p className="text-sm font-medium text-slate-700">诊疗项目</p>

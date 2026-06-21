@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { FileText, Search, Calendar, Stethoscope, ClipboardList, Plus } from 'lucide-react';
+import { FileText, Search, Calendar, Stethoscope, ClipboardList, Plus, Receipt, ArrowRight, Link2 } from 'lucide-react';
 import { usePetStore } from '../store/usePetStore';
 import { useMedicalRecordStore } from '../store/useMedicalRecordStore';
 import { useBillingStore } from '../store/useBillingStore';
+import { formatPrice } from '../utils/billing';
 
 export default function MedicalRecords() {
   const { pets, getPetById, searchPets } = usePetStore();
@@ -253,7 +254,7 @@ export default function MedicalRecords() {
                                 第 {petRecords.length - index} 次就诊
                               </span>
                             </div>
-                            <div className="space-y-2">
+                            <div className="space-y-3">
                               <div>
                                 <p className="text-xs text-slate-500 mb-1">诊断</p>
                                 <p className="text-slate-800 font-medium">
@@ -272,6 +273,46 @@ export default function MedicalRecords() {
                                   <p className="text-slate-600 text-sm">
                                     {record.notes}
                                   </p>
+                                </div>
+                              )}
+                              {record.billId && (
+                                <div className="pt-3 border-t border-slate-200">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-sm">
+                                      <Link2 className="w-4 h-4 text-blue-500" />
+                                      <span className="text-slate-500">关联账单：</span>
+                                      <span className="font-mono text-slate-700">{record.billId}</span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      {(() => {
+                                        const bill = petBills.find((b) => b.id === record.billId);
+                                        if (!bill) return null;
+                                        return (
+                                          <>
+                                            <span className={`text-sm font-medium ${
+                                              bill.status === 'paid' ? 'text-emerald-600' :
+                                              bill.status === 'refunded' ? 'text-red-600' : 'text-amber-600'
+                                            }`}>
+                                              {bill.status === 'paid' ? '已支付' :
+                                               bill.status === 'refunded' ? '已退款' : '待支付'}
+                                            </span>
+                                            <span className="text-sm font-semibold text-slate-800">
+                                              {formatPrice(bill.totalAmount)}
+                                            </span>
+                                            <button
+                                              onClick={() => {
+                                                alert(`账单详情：\n账单号：${bill.id}\n金额：${formatPrice(bill.totalAmount)}\n状态：${bill.status}`);
+                                              }}
+                                              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                                            >
+                                              查看账单
+                                              <ArrowRight className="w-3 h-3" />
+                                            </button>
+                                          </>
+                                        );
+                                      })()}
+                                    </div>
+                                  </div>
                                 </div>
                               )}
                             </div>

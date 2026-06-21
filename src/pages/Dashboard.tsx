@@ -5,11 +5,15 @@ import {
   Activity,
   Stethoscope,
   Bell,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { useQueueStore } from '../store/useQueueStore';
 import { useRoomStore } from '../store/useRoomStore';
 import { usePetStore } from '../store/usePetStore';
 import StatusBadge from '../components/StatusBadge';
+import PriorityBadge from '../components/PriorityBadge';
+import { TriagePriority } from '../types';
 
 export default function Dashboard() {
   const { getTodayStats, appointments, getWaitingQueue } = useQueueStore();
@@ -27,6 +31,20 @@ export default function Dashboard() {
       icon: Users,
       color: 'bg-blue-500',
       bgColor: 'bg-blue-50',
+    },
+    {
+      label: '急诊',
+      value: stats.emergency,
+      icon: AlertTriangle,
+      color: 'bg-red-500',
+      bgColor: 'bg-red-50',
+    },
+    {
+      label: '复诊',
+      value: stats.followup,
+      icon: RefreshCw,
+      color: 'bg-indigo-500',
+      bgColor: 'bg-indigo-50',
     },
     {
       label: '等待中',
@@ -70,7 +88,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {statCards.map((card) => (
           <div
             key={card.label}
@@ -179,12 +197,18 @@ export default function Dashboard() {
                 return (
                   <div
                     key={appt.id}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors"
+                    className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${
+                      appt.priorityLevel > 0
+                        ? 'bg-amber-50 hover:bg-amber-100'
+                        : 'bg-slate-50 hover:bg-slate-100'
+                    }`}
                   >
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
                         index === 0
                           ? 'bg-emerald-500 text-white'
+                          : appt.priorityLevel > 0
+                          ? 'bg-amber-500 text-white'
                           : 'bg-slate-200 text-slate-600'
                       }`}
                     >
@@ -195,6 +219,9 @@ export default function Dashboard() {
                         <span className="font-medium text-slate-800">
                           {pet?.name || '未知'}
                         </span>
+                        {appt.priorityLevel > 0 && (
+                          <PriorityBadge priority={appt.priority as TriagePriority} />
+                        )}
                         <StatusBadge status={appt.status} />
                       </div>
                       <p className="text-xs text-slate-500 truncate">

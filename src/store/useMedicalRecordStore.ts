@@ -10,6 +10,7 @@ interface MedicalRecordState {
   getRecordsByPetId: (petId: string) => MedicalRecord[];
   getRecordById: (id: string) => MedicalRecord | undefined;
   getRecordByAppointmentId: (appointmentId: string) => MedicalRecord | undefined;
+  getRecordByBillId: (billId: string) => MedicalRecord | undefined;
   updateRecord: (id: string, updates: Partial<MedicalRecord>) => void;
 }
 
@@ -40,6 +41,10 @@ export const useMedicalRecordStore = create<MedicalRecordState>()(
 
       getRecordByAppointmentId: (appointmentId) => {
         return get().records.find((r) => r.appointmentId === appointmentId);
+      },
+
+      getRecordByBillId: (billId) => {
+        return get().records.find((r) => r.billId === billId);
       },
 
       updateRecord: (id, updates) => {

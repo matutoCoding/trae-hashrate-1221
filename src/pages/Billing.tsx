@@ -9,12 +9,16 @@ import {
   TrendingDown,
   ArrowUpRight,
   ArrowDownRight,
+  Info,
+  CheckCircle,
+  XCircle,
+  SplitSquareVertical,
 } from 'lucide-react';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useBillingStore } from '../store/useBillingStore';
 import { useQueueStore } from '../store/useQueueStore';
 import { usePetStore } from '../store/usePetStore';
-import { BillItem } from '../types';
+import { BillItem, BillingBreakdown } from '../types';
 import { formatPrice } from '../utils/billing';
 
 interface SelectedItem {
@@ -50,6 +54,12 @@ export default function Billing() {
 
   const simpleItems = treatmentItems.filter((item) => item.isSimple);
   const complexItems = treatmentItems.filter((item) => !item.isSimple);
+
+  const hasSimpleItems = selectedItems.some((i) => i.isSimple);
+  const hasComplexItems = selectedItems.some((i) => !i.isSimple);
+  const hasMixedItems = hasSimpleItems && hasComplexItems;
+
+  const breakdown = calculation.breakdown;
 
   const addItem = (item: typeof treatmentItems[0]) => {
     const existing = selectedItems.find((i) => i.treatmentItemId === item.id);
@@ -127,6 +137,18 @@ export default function Billing() {
           <p className="text-slate-500 mt-1">选择诊疗项目，自动计算费用</p>
         </div>
       </div>
+
+      {hasMixedItems && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+          <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-blue-800">混合项目计费提示</p>
+            <p className="text-xs text-blue-600 mt-1">
+              当前选择了简单项目和复杂项目。计费规则：复杂项目部分适用封顶价，简单项目按原价计算，不适用起步价。
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -211,9 +233,17 @@ export default function Billing() {
                 <Calculator className="w-5 h-5 text-blue-500" />
                 简单项目
               </h2>
-              <span className="text-xs px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full">
-                起步价 {formatPrice(billingConfig.basePrice)}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full">
+                  起步价 {formatPrice(billingConfig.basePrice)}
+                </span>
+                {hasMixedItems && (
+                  <span className="text-xs px-2.5 py-1 bg-slate-100 text-slate-500 rounded-full flex items-center gap-1">
+                    <XCircle className="w-3 h-3" />
+                    不适用（混合项目）
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -273,7 +303,7 @@ export default function Billing() {
               费用明细
             </h2>
 
-            <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+            <div className="space-y-2 max-h-48 overflow-y-auto mb-4">
               {selectedItems.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">
                   <Calculator className="w-10 h-10 mx-auto mb-2 opacity-50" />
@@ -286,9 +316,18 @@ export default function Billing() {
                     className="flex items-center justify-between p-3 bg-slate-50 rounded-xl"
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-800 text-sm truncate">
-                        {item.itemName}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-slate-800 text-sm truncate">
+                          {item.itemName}
+                        </p>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${
+                          item.isSimple
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          {item.isSimple ? '简单' : '复杂'}
+                        </span>
+                      </div>
                       <p className="text-xs text-slate-500">
                         {formatPrice(item.unitPrice)} × {item.quantity}
                       </p>
@@ -312,6 +351,63 @@ export default function Billing() {
                 ))
               )}
             </div>
+
+            {breakdown && selectedItems.length > 0 && (
+              <div className="mb-4 p-4 bg-slate-50 rounded-xl space-y-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <SplitSquareVertical className="w-4 h-4" />
+                  费用分解
+                </div>
+
+                {breakdown.simpleItems.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500">简单项目小计</span>
+                      <span className="text-slate-700">{formatPrice(breakdown.simpleItemsSubtotal)}</span>
+                    </div>
+                    {breakdown.simpleBasePriceApplied && (
+                      <div className="flex items-center justify-between text-xs text-amber-600">
+                        <span className="flex items-center gap-1">
+                          <ArrowUpRight className="w-3 h-3" />
+                          起步价调整
+                        </span>
+                        <span>+{formatPrice(breakdown.simpleFinalAmount - breakdown.simpleItemsSubtotal)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-xs font-medium">
+                      <span className="text-slate-600">简单项目最终</span>
+                      <span className="text-slate-800">{formatPrice(breakdown.simpleFinalAmount)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {breakdown.complexItems.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500">复杂项目小计</span>
+                      <span className="text-slate-700">{formatPrice(breakdown.complexItemsSubtotal)}</span>
+                    </div>
+                    {breakdown.complexCeilingApplied && (
+                      <div className="flex items-center justify-between text-xs text-emerald-600">
+                        <span className="flex items-center gap-1">
+                          <ArrowDownRight className="w-3 h-3" />
+                          封顶价优惠
+                        </span>
+                        <span>-{formatPrice(breakdown.complexItemsSubtotal - breakdown.complexFinalAmount)}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-xs font-medium">
+                      <span className="text-slate-600">复杂项目最终</span>
+                      <span className="text-slate-800">{formatPrice(breakdown.complexFinalAmount)}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-slate-200">
+                  <p className="text-xs text-slate-500">{breakdown.adjustmentReason}</p>
+                </div>
+              </div>
+            )}
 
             <div className="border-t border-slate-100 pt-4 space-y-3">
               <div className="flex justify-between text-sm">
@@ -353,8 +449,9 @@ export default function Billing() {
 
             <div className="mt-4 p-3 bg-slate-50 rounded-xl">
               <p className="text-xs text-slate-500">
-                计费规则：简单项目不足{formatPrice(billingConfig.basePrice)}按起步价收取；
-                复杂项目超过{formatPrice(billingConfig.ceilingPrice)}按封顶价收取。
+                计费规则：仅简单项目不足{formatPrice(billingConfig.basePrice)}按起步价收取；
+                含复杂项目时超过{formatPrice(billingConfig.ceilingPrice)}按封顶价收取；
+                混合项目时复杂部分封顶，简单部分原价。
               </p>
             </div>
 

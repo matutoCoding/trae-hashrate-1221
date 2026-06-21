@@ -1,22 +1,36 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Appointment, Pet } from '../types';
+import { Appointment, Pet, TriagePriority, triagePriorityConfig, BillItem } from '../types';
 import { mockAppointments, generateId, generateQueueNumber } from '../utils/mock';
 import { useRoomStore } from './useRoomStore';
 import { useSettingsStore } from './useSettingsStore';
+import { useBillingStore } from './useBillingStore';
+import { useMedicalRecordStore } from './useMedicalRecordStore';
 import { findLeastBusyRoom } from '../utils/loadBalancer';
+import { calculateBill } from '../utils/billing';
+
+interface CompleteVisitData {
+  diagnosis: string;
+  treatmentPlan: string;
+  treatment: string;
+  notes: string;
+  treatmentItems: Omit<BillItem, 'id' | 'subtotal'>[];
+}
 
 interface QueueState {
   appointments: Appointment[];
   currentQueueNumber: number;
 
-  createAppointment: (pet: Pet) => Appointment;
+  createAppointment: (pet: Pet, priority?: TriagePriority) => Appointment;
   callNext: (roomId: string) => Appointment | null;
   startVisit: (appointmentId: string) => void;
   completeAppointment: (appointmentId: string) => void;
+  completeVisitWithData: (appointmentId: string, data: CompleteVisitData) => { billId: string; recordId: string; billAmount: number };
   cancelAppointment: (appointmentId: string) => void;
   transferAppointment: (appointmentId: string, targetRoomId: string) => void;
+  batchTransfer: (transfers: { appointmentId: string; fromRoomId: string; toRoomId: string }[]) => void;
 
+  canCallNext: (roomId: string) => boolean;
   getWaitingQueue: (roomId?: string) => Appointment[];
   getCurrentAppointment: (roomId: string) => Appointment | undefined;
   getAppointmentById: (id: string) => Appointment | undefined;
@@ -26,7 +40,16 @@ interface QueueState {
     waiting: number;
     visiting: number;
     completed: number;
+    emergency: number;
+    followup: number;
   };
+}
+
+function sortAppointments(a: Appointment, b: Appointment): number {
+  if (a.priorityLevel !== b.priorityLevel) {
+    return b.priorityLevel - a.priorityLevel;
+  }
+  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
 }
 
 export const useQueueStore = create<QueueState>()(
@@ -35,7 +58,7 @@ export const useQueueStore = create<QueueState>()(
       appointments: mockAppointments,
       currentQueueNumber: 5,
 
-      createAppointment: (pet) => {
+      createAppointment: (pet, priority = 'normal') => {
         const { rooms } = useRoomStore.getState();
         const { billingConfig } = useSettingsStore.getState();
 
@@ -45,6 +68,7 @@ export const useQueueStore = create<QueueState>()(
           throw new Error('没有可用的诊室');
         }
 
+        const priorityConfig = triagePriorityConfig[priority];
         const newNumber = get().currentQueueNumber + 1;
         const newAppointment: Appointment = {
           id: generateId('appt'),
@@ -52,7 +76,8 @@ export const useQueueStore = create<QueueState>()(
           petId: pet.id,
           roomId: targetRoom.id,
           status: 'waiting',
-          priority: 0,
+          priority,
+          priorityLevel: priorityConfig.level,
           createdAt: new Date().toISOString(),
         };
 
@@ -64,15 +89,23 @@ export const useQueueStore = create<QueueState>()(
         return newAppointment;
       },
 
+      canCallNext: (roomId) => {
+        const currentAppt = get().appointments.find(
+          (a) => a.roomId === roomId && (a.status === 'visiting' || a.status === 'called')
+        );
+        return !currentAppt;
+      },
+
       callNext: (roomId) => {
+        if (!get().canCallNext(roomId)) {
+          throw new Error('当前诊室还有未完成的接诊，请先完成后再叫下一位');
+        }
+
         const waitingList = get()
           .appointments.filter(
             (a) => a.roomId === roomId && a.status === 'waiting'
           )
-          .sort((a, b) => {
-            if (a.priority !== b.priority) return b.priority - a.priority;
-            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-          });
+          .sort(sortAppointments);
 
         if (waitingList.length === 0) return null;
 
@@ -130,6 +163,36 @@ export const useQueueStore = create<QueueState>()(
         }
       },
 
+      completeVisitWithData: (appointmentId, data) => {
+        const appointment = get().appointments.find((a) => a.id === appointmentId);
+        if (!appointment) {
+          throw new Error('找不到该就诊记录');
+        }
+
+        const { billingConfig } = useSettingsStore.getState();
+        const calculation = calculateBill(data.treatmentItems, billingConfig);
+
+        const bill = useBillingStore.getState().createBill(
+          appointmentId,
+          appointment.petId,
+          data.treatmentItems
+        );
+
+        const record = useMedicalRecordStore.getState().addRecord({
+          petId: appointment.petId,
+          appointmentId,
+          billId: bill.id,
+          diagnosis: data.diagnosis,
+          treatment: data.treatment,
+          treatmentPlan: data.treatmentPlan,
+          notes: data.notes,
+        });
+
+        get().completeAppointment(appointmentId);
+
+        return { billId: bill.id, recordId: record.id, billAmount: calculation.totalAmount };
+      },
+
       cancelAppointment: (appointmentId) => {
         set((state) => ({
           appointments: state.appointments.map((a) =>
@@ -146,6 +209,22 @@ export const useQueueStore = create<QueueState>()(
         }));
       },
 
+      batchTransfer: (transfers) => {
+        set((state) => {
+          const updatedAppointments = [...state.appointments];
+          transfers.forEach(({ appointmentId, toRoomId }) => {
+            const index = updatedAppointments.findIndex((a) => a.id === appointmentId);
+            if (index !== -1) {
+              updatedAppointments[index] = {
+                ...updatedAppointments[index],
+                roomId: toRoomId,
+              };
+            }
+          });
+          return { appointments: updatedAppointments };
+        });
+      },
+
       getWaitingQueue: (roomId) => {
         return get()
           .appointments.filter((a) => {
@@ -155,7 +234,7 @@ export const useQueueStore = create<QueueState>()(
           .sort((a, b) => {
             if (a.status === 'called' && b.status !== 'called') return -1;
             if (b.status === 'called' && a.status !== 'called') return 1;
-            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+            return sortAppointments(a, b);
           });
       },
 
@@ -182,6 +261,8 @@ export const useQueueStore = create<QueueState>()(
           waiting: todayAppointments.filter((a) => a.status === 'waiting').length,
           visiting: todayAppointments.filter((a) => a.status === 'visiting' || a.status === 'called').length,
           completed: todayAppointments.filter((a) => a.status === 'completed').length,
+          emergency: todayAppointments.filter((a) => a.priority === 'emergency').length,
+          followup: todayAppointments.filter((a) => a.priority === 'followup').length,
         };
       },
     }),
